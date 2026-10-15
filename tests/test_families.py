@@ -5,6 +5,7 @@ from functools import cache
 
 import pytest
 
+from margin_bench.sims import ngspice
 from margin_bench.tasks import FAMILIES
 
 DEFAULT_SEEDS = 100
@@ -23,7 +24,10 @@ def seeds(family_id):
 
 @pytest.fixture(params=sorted(FAMILIES), ids=sorted(FAMILIES))
 def family(request):
-    return FAMILIES[request.param]
+    fam = FAMILIES[request.param]
+    if fam.domain == "electronics" and not ngspice.available():
+        pytest.skip("ngspice shared library not found (set NGSPICE_PATH)")
+    return fam
 
 
 def test_reference_passes(family):
