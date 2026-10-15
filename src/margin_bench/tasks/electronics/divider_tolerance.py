@@ -212,19 +212,20 @@ def _plot(s: dict[str, Any], vouts: np.ndarray, currents: np.ndarray) -> dict[st
     bad_v = (vouts < lo) | (vouts > hi)
     v_panel = plot.panel(
         "Output voltage at each corner",
-        "Corner (supply, R1, R2, load at tolerance limits)",
+        "Tolerance corner",
         "Vout (V)",
         [plot.series("Answer (ngspice)", idx, vouts)],
         x_range=(0.5, x_end),
         y_range=(min(lo - pad, float(vouts.min()) - pad / 3), max(hi + pad, float(vouts.max()) + pad / 3)),
         forbidden_list=[plot.forbidden(0.5, x_end, hi, None, "above window"), plot.forbidden(0.5, x_end, None, lo, "below window")],
         violation_points=plot.violations(idx[bad_v], vouts[bad_v]),
+        note="Each corner puts the supply, R1, R2 and the load at one of their tolerance limits.",
     )
     imax = s["current_max_a"]
     bad_i = currents > imax
     i_panel = plot.panel(
         "Supply current at each corner",
-        "Corner",
+        "Tolerance corner",
         "Current (A)",
         [plot.series("Answer (ngspice)", idx, currents)],
         x_range=(0.5, x_end),
