@@ -1,0 +1,27 @@
+[project]
+name = "margin-bench"
+version = "0.1.0"
+description = "LLM benchmark: design-to-spec tasks in DSP, electronics and control, graded by simulation"
+readme = "README.md"
+authors = [
+    { name = "Takzen-legion", email = "takzen.app@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "control>=0.10.2",
+    "httpx>=0.28.1",
+    "numpy>=2.5.4",
+    "scipy>=1.18.1",
+]
+
+[project.scripts]
+margin-bench = "margin_bench.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]

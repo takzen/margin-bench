@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640" role="img" aria-label="margin-bench: can a language model design to spec? DSP, electronics and control, graded by simulation.">
+  <defs>
+    <pattern id="hatch" width="12" height="12" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="12" height="12" fill="#161c22"/>
+      <line x1="0" y1="0" x2="0" y2="12" stroke="#3a444f" stroke-width="2.5"/>
+    </pattern>
+  </defs>
+  <rect width="1280" height="640" fill="#0f1419"/>
+
+  <!-- Plot: a lowpass response under its mask -->
+  <g transform="translate(96 120)">
+    <rect x="0" y="150" width="190" height="250" fill="url(#hatch)"/>
+    <rect x="270" y="0" width="200" height="200" fill="url(#hatch)"/>
+    <path d="M0 150 H190 M270 200 H470" stroke="#b9c1ca" stroke-width="3" stroke-linecap="round" fill="none"/>
+    <path d="M0 400 H470" stroke="#2c343c" stroke-width="2"/>
+    <path d="M0 96 H150 C200 96 215 140 232 205 C246 262 258 318 285 330 Q312 300 339 330 Q366 304 393 330 Q420 306 447 330 Q458 322 470 330" stroke="#3987e5" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <path d="M372 212 V300" stroke="#3cc43c" stroke-width="4" stroke-linecap="round"/>
+    <path d="M362 222 L372 210 L382 222 M362 290 L372 302 L382 290" stroke="#3cc43c" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <text x="392" y="262" fill="#3cc43c" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="24" font-weight="600">margin</text>
+    <text x="0" y="436" fill="#7d8794" font-family="Consolas, Menlo, monospace" font-size="20">passband</text>
+    <text x="270" y="436" fill="#7d8794" font-family="Consolas, Menlo, monospace" font-size="20">stopband</text>
+  </g>
+
+  <!-- Wordmark -->
+  <g font-family="Segoe UI, Helvetica, Arial, sans-serif">
+    <text x="660" y="250" fill="#eef1f4" font-size="84" font-weight="700" letter-spacing="-1">margin-bench</text>
+    <text x="662" y="318" fill="#b9c1ca" font-size="34">Can a language model design to spec?</text>
+    <text x="662" y="408" fill="#8b95a1" font-size="26">DSP · electronics · control</text>
+    <text x="662" y="448" fill="#8b95a1" font-size="26">Graded by simulation, never by another model.</text>
+  </g>
+</svg>

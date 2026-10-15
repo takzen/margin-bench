@@ -1,0 +1,30 @@
+# Smoke run: checks the harness end to end on one task family.
+# Not a measurement: too few instances and attempts for a ranking.
+
+name = "smoke-fir"
+families = ["dsp.fir_lowpass_mask"]
+seeds = [0, 1, 2, 3, 4]
+k = 2
+expected_output_tokens = 12000
+max_cost_usd = 10.0
+workers = 4
+
+[[models]]
+model = "openai/gpt-6.1-sol"
+reasoning_effort = "high"
+max_tokens = 32000
+
+[[models]]
+model = "anthropic/claude-sonnet-5.5"
+reasoning_effort = "high"
+max_tokens = 32000
+
+[[models]]
+model = "google/gemini-4-argon"
+reasoning_effort = "high"
+max_tokens = 32000
+
+[[models]]
+model = "deepseek/deepseek-v4.1-flash"
+reasoning_effort = "high"
+max_tokens = 32000
