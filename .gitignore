@@ -17,3 +17,7 @@ private/
 
 # Tool caches
 .pytest_cache/
+
+# Local assistant notes - never public
+CLAUDE.md
+.claude/
