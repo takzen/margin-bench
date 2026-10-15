@@ -2,12 +2,16 @@ from margin_bench.core import TaskFamily
 from margin_bench.tasks.control.discrete_pid import DiscretePid
 from margin_bench.tasks.control.loop_margins import LoopMargins
 from margin_bench.tasks.control.pid_step_spec import PidStepSpec
+from margin_bench.tasks.dsp.ema_shift import EmaShift
 from margin_bench.tasks.dsp.fir_lowpass_mask import FirLowpassMask
+from margin_bench.tasks.dsp.q15_biquad import Q15Biquad
 
 FAMILIES: dict[str, TaskFamily] = {
     f.id: f
     for f in (
         FirLowpassMask(),
+        Q15Biquad(),
+        EmaShift(),
         PidStepSpec(),
         LoopMargins(),
         DiscretePid(),

@@ -9,7 +9,7 @@ from margin_bench.tasks import FAMILIES
 
 DEFAULT_SEEDS = 100
 # Families whose generator runs simulations to set the spec are checked on fewer seeds.
-SEEDS = {"control.pid_step_spec": 30}
+SEEDS = {"control.pid_step_spec": 30, "dsp.ema_shift": 50}
 
 
 @cache
