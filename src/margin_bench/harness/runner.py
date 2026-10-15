@@ -32,7 +32,7 @@ CHARS_PER_TOKEN = 3.5  # conservative: overestimates prompt tokens for English t
 class RunConfig:
     name: str
     families: tuple[str, ...]
-    seeds: tuple[int, ...]
+    seeds: dict[str, tuple[int, ...]]  # family id -> seeds
     k: int
     models: tuple[Settings, ...]
     output: Path
@@ -43,6 +43,18 @@ class RunConfig:
     @classmethod
     def from_toml(cls, path: Path) -> RunConfig:
         raw = tomllib.loads(path.read_text(encoding="utf-8"))
+        families = tuple(raw["families"])
+        name = raw["name"]
+        output = Path(raw.get("output", f"results/runs/{name}.jsonl"))
+        if "seeds_file" in raw:
+            # Hidden test set: seeds live in private/, and so must the results.
+            seeds_path = Path(raw["seeds_file"])
+            by_family = json.loads(seeds_path.read_text(encoding="utf-8"))
+            seeds = {fid: tuple(by_family[fid]) for fid in families}
+            if "private" not in output.parts:
+                raise ValueError("a run on a hidden seeds_file must write its output under private/")
+        else:
+            seeds = {fid: tuple(raw["seeds"]) for fid in families}
         models = tuple(
             Settings(
                 model=m["model"],
@@ -53,14 +65,13 @@ class RunConfig:
             )
             for m in raw["models"]
         )
-        name = raw["name"]
         return cls(
             name=name,
-            families=tuple(raw["families"]),
-            seeds=tuple(raw["seeds"]),
+            families=families,
+            seeds=seeds,
             k=raw["k"],
             models=models,
-            output=Path(raw.get("output", f"results/runs/{name}.jsonl")),
+            output=output,
             expected_output_tokens=raw.get("expected_output_tokens", 8000),
             max_cost_usd=raw.get("max_cost_usd"),
             workers=raw.get("workers", 4),
@@ -80,7 +91,7 @@ class Attempt:
 
 def plan(cfg: RunConfig) -> list[Attempt]:
     """All attempts, ordered so that a run cut short stays balanced across models."""
-    tasks = [get_family(fid).generate(seed) for fid in cfg.families for seed in cfg.seeds]
+    tasks = [get_family(fid).generate(seed) for fid in cfg.families for seed in cfg.seeds[fid]]
     return [Attempt(s, t, i) for i in range(cfg.k) for t in tasks for s in cfg.models]
 
 

@@ -124,7 +124,7 @@ def cfg(tmp_path):
     return RunConfig(
         name="t",
         families=("dsp.fir_lowpass_mask",),
-        seeds=(0, 1, 2),
+        seeds={"dsp.fir_lowpass_mask": (0, 1, 2)},
         k=2,
         models=(Settings("good/model", reasoning_effort="high"), Settings("bad/model")),
         output=tmp_path / "t.jsonl",
@@ -216,3 +216,23 @@ providers = ["openai"]
     assert cfg.output.as_posix() == "results/runs/smoke.jsonl"
     assert cfg.models[0].key == "openai/gpt-x|effort=high|max_tokens=32000|providers=openai"
     assert cfg.max_cost_usd == 5.0
+    assert cfg.seeds == {"dsp.fir_lowpass_mask": (0, 1)}
+
+
+def test_hidden_seeds_must_write_to_private(tmp_path):
+    seeds = tmp_path / "test-v0.json"
+    seeds.write_text('{"dsp.fir_lowpass_mask": [123456789]}', encoding="utf-8")
+    base = f"""
+name = "hidden"
+families = ["dsp.fir_lowpass_mask"]
+seeds_file = "{seeds.as_posix()}"
+k = 1
+[[models]]
+model = "m"
+"""
+    p = tmp_path / "hidden.toml"
+    p.write_text(base, encoding="utf-8")
+    with pytest.raises(ValueError, match="private"):
+        RunConfig.from_toml(p)
+    p.write_text(base.replace("k = 1", 'k = 1\noutput = "private/runs/hidden.jsonl"'), encoding="utf-8")
+    assert RunConfig.from_toml(p).seeds == {"dsp.fir_lowpass_mask": (123456789,)}

@@ -217,12 +217,9 @@ def _plot(s: dict[str, Any], f: np.ndarray, mag: np.ndarray, bw: float | None) -
             [plot.series("Answer (ngspice)", f, db)],
             x_scale="log",
             y_range=(min(float(db.min()), g_db - 40), g_db + 6),
-            forbidden_list=[
-                plot.forbidden(float(f[0]), s["bandwidth_min_hz"], None, floor, "more than 3 dB down"),
-                plot.forbidden(float(f[0]), float(f[0]) * 10, g_db + 20 * math.log10(1 + GAIN_TOL), None, "gain too high"),
-                plot.forbidden(float(f[0]), float(f[0]) * 10, None, g_db + 20 * math.log10(1 - GAIN_TOL), "gain too low"),
-            ],
-            markers=markers,
+            forbidden_list=[plot.forbidden(float(f[0]), s["bandwidth_min_hz"], None, floor, "more than 3 dB down")],
+            markers=markers + [plot.marker("y", g_db, "required gain")],
+            note="The gain at 1 Hz must be within 1 % of the required gain; see the measurements.",
             violation_points=plot.violations(f[bad], db[bad]),
         )
     )

@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>margin-bench</title>
+<meta name="description" content="Can a language model design to spec? An LLM benchmark in DSP, electronics and control, graded by simulation.">
+<link rel="icon" href="assets/logo.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#"><img src="assets/logo.svg" alt=""><b>margin-bench</b></a>
+    <nav aria-label="Sections">
+      <a href="#leaderboard">Leaderboard</a>
+      <a href="#families">Tasks</a>
+      <a href="#attempts">Attempts</a>
+      <a href="#method">Method</a>
+    </nav>
+    <a class="gh" href="https://github.com/takzen/margin-bench">GitHub</a>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="hero">
+    <h1>Can a language model design to spec?</h1>
+    <p>Models get engineering design tasks in digital signal processing, electronics and control. Every answer is graded by measurement or simulation (scipy, python-control, ngspice), never by another model, and every attempt can be opened and checked below.</p>
+    <p class="notice" id="demo-notice" hidden><b>No model has been run yet.</b> The two rows below are each task family's reference design and its known-bad answer, graded exactly like model answers. They show how the grading and the attempt viewer work.</p>
+  </div>
+
+  <div id="main-content">
+    <section class="block" id="leaderboard">
+      <h2>Leaderboard</h2>
+      <p class="lead">Score from 0 to 1: each family's mean, families weighted equally, with a 95% bootstrap interval over task instances. A score of 1 means every requirement was met.</p>
+      <div class="panel scroll-x"><table class="lb" id="lb"></table></div>
+    </section>
+
+    <section class="block" id="heatmap">
+      <h2>Scores by task family</h2>
+      <p class="lead">Mean score per model and family. Select a cell to list those attempts.</p>
+      <div class="panel scroll-x"><table class="heat" id="heat"></table></div>
+    </section>
+
+    <section class="block" id="cost" hidden>
+      <h2>Score and cost</h2>
+      <p class="lead">Total cost of the run per model, from OpenRouter's billed amounts.</p>
+      <div class="panel"><div class="chart" id="cost-chart"></div></div>
+    </section>
+
+    <section class="block" id="families">
+      <h2>Task families</h2>
+      <p class="lead">Each family generates task instances from a seed. Every family has a reference answer that passes and a known-bad answer that fails, both checked by the test suite.</p>
+      <div class="fam-grid" id="fam-grid"></div>
+    </section>
+
+    <section class="block" id="attempts">
+      <h2>Attempts</h2>
+      <div class="filters">
+        <label>Model <select id="f-model"></select></label>
+        <label>Task family <select id="f-family"></select></label>
+        <label>Outcome
+          <select id="f-outcome">
+            <option value="">All</option>
+            <option value="pass">Pass</option>
+            <option value="fail">Fail</option>
+            <option value="fmt">Format error</option>
+          </select>
+        </label>
+        <span class="count" id="att-count"></span>
+      </div>
+      <div class="panel scroll-x"><table class="att-list" id="att-list"></table></div>
+    </section>
+
+    <section class="block" id="method">
+      <h2>Method</h2>
+      <div class="panel">
+        <ul>
+          <li><b>No model as judge.</b> Answers are graded by deterministic measurement or simulation.</li>
+          <li><b>Seeded tasks.</b> The dev set is public; the test set is hidden and drawn again for every benchmark version.</li>
+          <li><b>Continuous score and pass/fail.</b> Each requirement gives a ratio that reaches 1 exactly when it is met; the score is the smallest one.</li>
+          <li><b>Format errors count separately,</b> so "cannot design it" and "cannot follow the answer format" stay apart.</li>
+          <li><b>One prompt for every model.</b> Sampling settings are stored with every attempt, and raw transcripts are published.</li>
+          <li><b>Conflict of interest.</b> The project is built with help from Claude, and Claude models are evaluated. Task difficulty is set by rules about design methods, never by any model's score.</li>
+        </ul>
+        <p>Details, code and the full rules are in the <a href="https://github.com/takzen/margin-bench">repository</a>.</p>
+      </div>
+    </section>
+  </div>
+
+  <section class="viewer block" id="viewer" hidden aria-live="polite"></section>
+</main>
+
+<footer class="wrap">
+  <p id="gen-line"></p>
+  <p>margin-bench is an open benchmark. Results can be reproduced with the code and run configs in the repository.</p>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

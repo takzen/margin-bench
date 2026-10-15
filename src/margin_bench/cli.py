@@ -1,4 +1,4 @@
-"""Command line entry point: inspect task families without calling any model."""
+"""Command line entry point."""
 
 from __future__ import annotations
 
@@ -20,10 +20,18 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("family")
     p.add_argument("--seed", type=int, default=0)
 
-    d = sub.add_parser("demo", help="grade the reference and negative answers, write JSON")
-    d.add_argument("family")
-    d.add_argument("--seeds", type=int, nargs="+", default=[0])
-    d.add_argument("--out", type=Path, required=True)
+    e = sub.add_parser("export-site", help="grade stored attempts again with plots and write site data")
+    e.add_argument("results", type=Path, nargs="+", help="attempt JSONL files")
+    e.add_argument("--out", type=Path, default=Path("site/data"))
+    e.add_argument("--publish-hidden", action="store_true", help="allow results from private/ (reveals test instances)")
+
+    dm = sub.add_parser("export-demo", help="write site data from reference and negative answers (no models)")
+    dm.add_argument("--seeds", type=int, default=3, help="dev seeds per family")
+    dm.add_argument("--out", type=Path, default=Path("site/data"))
+
+    ts = sub.add_parser("new-test-set", help="draw secret seeds for a hidden test set into private/")
+    ts.add_argument("name")
+    ts.add_argument("--per-family", type=int, default=10)
 
     r = sub.add_parser("run", help="estimate the cost of a run config; call models only with --execute")
     r.add_argument("config", type=Path)
@@ -41,27 +49,16 @@ def main(argv: list[str] | None = None) -> None:
         task = get_family(args.family).generate(args.seed)
         sys.stdout.write(task.prompt)
         print(json.dumps(task.spec, indent=2))
-    elif args.command == "demo":
-        family = get_family(args.family)
-        records = []
-        for seed in args.seeds:
-            task = family.generate(seed)
-            for label, answer in (("reference", family.reference(task)), ("negative", family.negative(task))):
-                score = family.grade(task, answer)
-                records.append(
-                    {
-                        "instance_id": task.instance_id,
-                        "answer_label": label,
-                        "prompt": task.prompt,
-                        "spec": task.spec,
-                        "answer": answer,
-                        **score.to_dict(),
-                    }
-                )
-                print(f"{task.instance_id}\t{label}\tscore={score.score:.3f}\tpassed={score.passed}")
-        args.out.parent.mkdir(parents=True, exist_ok=True)
-        args.out.write_text(json.dumps(records, indent=1), encoding="utf-8")
-        print(f"wrote {args.out}")
+    elif args.command == "export-site":
+        _export_site(args.results, args.out, args.publish_hidden)
+    elif args.command == "export-demo":
+        from margin_bench.report import export
+
+        summary, attempts = export.build(export.demo_records(range(args.seeds)), demo=True)
+        export.write(args.out, summary, attempts)
+        print(f"wrote {len(attempts)} demo attempts to {args.out}")
+    elif args.command == "new-test-set":
+        _new_test_set(args.name, args.per_family)
     elif args.command == "run":
         _run(args.config, args.execute)
     elif args.command == "report":
@@ -104,6 +101,32 @@ def _run(config: Path, execute: bool) -> None:
         raise SystemExit("OPENROUTER_API_KEY is not set (environment or .env)")
     summary = runner.execute(cfg, todo, OpenRouterClient(api_key), store)
     print(f"\ndone: {summary}")
+
+
+def _export_site(results: list[Path], out: Path, publish_hidden: bool) -> None:
+    from margin_bench.harness.runner import AttemptStore
+    from margin_bench.report import export
+
+    hidden = [p for p in results if "private" in p.resolve().parts]
+    if hidden and not publish_hidden:
+        raise SystemExit(f"refusing to publish hidden test results {hidden}; pass --publish-hidden once the version is final")
+    records = [r for p in results for r in AttemptStore(p).records()]
+    summary, attempts = export.build(records)
+    export.write(out, summary, attempts)
+    print(f"wrote {len(attempts)} attempts from {len(results)} file(s) to {out}")
+
+
+def _new_test_set(name: str, per_family: int) -> None:
+    import secrets
+
+    path = Path("private") / f"{name}.json"
+    if path.exists():
+        raise SystemExit(f"{path} exists; a test set is never overwritten")
+    # Above the dev range, drawn from the OS's secure source: not guessable from the code.
+    seeds = {fid: sorted(10**6 + secrets.randbelow(2**31 - 10**6) for _ in range(per_family)) for fid in FAMILIES}
+    path.parent.mkdir(exist_ok=True)
+    path.write_text(json.dumps(seeds, indent=1), encoding="utf-8")
+    print(f"wrote {per_family} secret seeds per family to {path}; it is gitignored, keep a backup outside the repo")
 
 
 def _usd(v: float | None) -> str:

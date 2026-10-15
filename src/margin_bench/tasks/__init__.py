@@ -24,6 +24,11 @@ FAMILIES: dict[str, TaskFamily] = {
     )
 }
 
+# Every family is approved by the author before it counts. Anything not listed is awaiting review.
+REVIEW_STATUS: dict[str, str] = {
+    "dsp.fir_lowpass_mask": "accepted",
+}
+
 
 def get_family(family_id: str) -> TaskFamily:
     try:

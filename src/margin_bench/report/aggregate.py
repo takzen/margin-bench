@@ -72,3 +72,32 @@ def summarize(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
             }
         )
     return rows
+
+
+def per_instance_scores(records: list[dict[str, Any]]) -> dict[str, dict[str, np.ndarray]]:
+    """settings_key -> family_id -> mean score per instance (successful API calls only)."""
+    acc: dict[str, dict[str, dict[str, list[float]]]] = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+    for r in records:
+        if r["status"] == "ok":
+            acc[r["settings_key"]][r["family_id"]][r["instance_id"]].append(r["grade"]["score"])
+    return {
+        key: {fid: np.array([np.mean(v) for v in inst.values()]) for fid, inst in fams.items()}
+        for key, fams in acc.items()
+    }
+
+
+def stratified_mean_ci(
+    by_family: dict[str, np.ndarray], n_boot: int = N_BOOT, seed: int = BOOT_SEED
+) -> tuple[float, tuple[float, float]]:
+    """Mean of family means, each family weighted equally; bootstrap within each family."""
+    fams = [v for v in by_family.values() if len(v)]
+    if not fams:
+        return float("nan"), (float("nan"), float("nan"))
+    rng = np.random.default_rng(seed)
+    boots = np.zeros(n_boot)
+    for v in fams:
+        idx = rng.integers(0, len(v), size=(n_boot, len(v)))
+        boots += v[idx].mean(axis=1)
+    boots /= len(fams)
+    lo, hi = np.quantile(boots, [(1 - CI) / 2, 1 - (1 - CI) / 2])
+    return float(np.mean([v.mean() for v in fams])), (float(lo), float(hi))

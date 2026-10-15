@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="margin-bench logo: a filter response passing under its spec mask, with the margin marked">
+  <defs>
+    <pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="6" height="6" fill="#1d242b"/>
+      <line x1="0" y1="0" x2="0" y2="6" stroke="#5d6875" stroke-width="2"/>
+    </pattern>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="#0f1419"/>
+  <!-- Forbidden zones of the spec mask -->
+  <rect x="16" y="50" width="42" height="62" fill="url(#hatch)"/>
+  <rect x="72" y="16" width="40" height="50" fill="url(#hatch)"/>
+  <path d="M16 50 H58 M72 66 H112" stroke="#b9c1ca" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+  <!-- The response: flat passband, then down into the stopband with ripples -->
+  <path d="M16 36 H46 C57 36 61 46 65 64 C68 80 71 95 77 98 Q83 91 89 98 Q95 92 101 98 Q107 93 112 98" stroke="#3987e5" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- The margin -->
+  <path d="M95 71 V88" stroke="#3cc43c" stroke-width="3" stroke-linecap="round"/>
+  <path d="M90.5 75.5 L95 70.5 L99.5 75.5 M90.5 83.5 L95 88.5 L99.5 83.5" stroke="#3cc43c" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</svg>
