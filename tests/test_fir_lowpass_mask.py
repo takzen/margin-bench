@@ -77,6 +77,7 @@ def test_tap_order_does_not_matter(task):
 def test_plot_data_marks_violations(task):
     good = family.grade(task, family.reference(task))
     bad = family.grade(task, family.negative(task))
-    assert good.plot_data["violations"] == []
-    assert bad.plot_data["violations"]
-    assert len(good.plot_data["curve"]["x"]) == len(good.plot_data["curve"]["y"])
+    assert all(p["violations"] == [] for p in good.plot_data["panels"])
+    assert bad.plot_data["panels"][0]["violations"]
+    curve = good.plot_data["panels"][0]["series"][0]
+    assert len(curve["x"]) == len(curve["y"])

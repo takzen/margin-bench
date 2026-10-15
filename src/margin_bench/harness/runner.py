@@ -213,9 +213,10 @@ def execute(
                 counts["api_error"] += 1
             log(f"API ERROR  {a.settings.key}  {a.task.instance_id}#{a.index}: {e}")
             return
-        score = grade_response(get_family(a.task.family_id), a.task, completion.text)
+        # Plot data is rebuilt from the stored response when results are exported.
+        score = grade_response(get_family(a.task.family_id), a.task, completion.text, with_plot=False)
         grade = score.to_dict()
-        grade.pop("plot_data")  # regenerated from the response by the report step
+        grade.pop("plot_data")
         record.update(status="ok", error=None, completion=completion.to_dict(), grade=grade)
         store.append(record)
         with lock:

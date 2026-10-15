@@ -1,7 +1,18 @@
 from margin_bench.core import TaskFamily
+from margin_bench.tasks.control.discrete_pid import DiscretePid
+from margin_bench.tasks.control.loop_margins import LoopMargins
+from margin_bench.tasks.control.pid_step_spec import PidStepSpec
 from margin_bench.tasks.dsp.fir_lowpass_mask import FirLowpassMask
 
-FAMILIES: dict[str, TaskFamily] = {f.id: f for f in (FirLowpassMask(),)}
+FAMILIES: dict[str, TaskFamily] = {
+    f.id: f
+    for f in (
+        FirLowpassMask(),
+        PidStepSpec(),
+        LoopMargins(),
+        DiscretePid(),
+    )
+}
 
 
 def get_family(family_id: str) -> TaskFamily:

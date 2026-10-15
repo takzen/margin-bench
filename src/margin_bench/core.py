@@ -53,8 +53,11 @@ class TaskFamily(Protocol):
         """Build the prompt and spec deterministically from the seed."""
         ...
 
-    def grade(self, task: Task, answer: dict[str, Any]) -> Score:
-        """Grade a parsed answer by measurement or simulation only."""
+    def grade(self, task: Task, answer: dict[str, Any], with_plot: bool = True) -> Score:
+        """Grade a parsed answer by measurement or simulation only.
+
+        with_plot=False skips building plot_data; the score and metrics are the same.
+        """
         ...
 
     def reference(self, task: Task) -> dict[str, Any]:

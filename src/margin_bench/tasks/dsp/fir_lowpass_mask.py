@@ -22,7 +22,7 @@ import numpy as np
 from scipy import signal
 
 from margin_bench.core import Score, Task
-from margin_bench.grading import scoring
+from margin_bench.grading import plot, scoring
 from margin_bench.tasks.rng import SeededRandom
 
 SAMPLE_RATES_HZ = (1000, 8000, 16000, 44100, 48000)
@@ -36,8 +36,6 @@ GRID_POINTS = 4096
 # Floor for |H| before taking dB, so exact zeros do not produce -inf.
 MAG_FLOOR = 1e-12
 PLOT_POINTS = 1024
-PLOT_DB_FLOOR = -150.0
-MAX_PLOTTED_VIOLATIONS = 256
 
 PROMPT = """\
 Design a digital FIR lowpass filter that meets the specification below.
@@ -114,7 +112,7 @@ class FirLowpassMask:
             prompt = PROMPT.format(fs=fs, fp=fp, fst=fst, nyq=fs / 2, ap=ap, as_=as_, nmax=nmax)
             task = Task(family_id=self.id, seed=seed, prompt=prompt, spec=spec)
             # Every instance must be provably solvable.
-            if self.grade(task, self.reference(task)).passed:
+            if self.grade(task, self.reference(task), with_plot=False).passed:
                 return task
         raise RuntimeError(f"no feasible instance for seed {seed}")
 
@@ -139,7 +137,7 @@ class FirLowpassMask:
         taps = signal.firwin(s["max_taps"], cutoff, window="boxcar", fs=s["sample_rate_hz"])
         return {"taps": taps.tolist()}
 
-    def grade(self, task: Task, answer: dict[str, Any]) -> Score:
+    def grade(self, task: Task, answer: dict[str, Any], with_plot: bool = True) -> Score:
         taps = answer.get("taps") if isinstance(answer, dict) else None
         if not isinstance(taps, list) or not taps:
             return Score.format_failure('expected "taps": a non-empty list of numbers')
@@ -179,29 +177,7 @@ class FirLowpassMask:
 
         bad_pass = np.abs(db_pass) > ap
         bad_stop = db_stop > -as_
-        violations = np.concatenate(
-            [
-                np.column_stack([f_pass[bad_pass], db_pass[bad_pass]]),
-                np.column_stack([f_stop[bad_stop], db_stop[bad_stop]]),
-            ]
-        )
-        if len(violations) > MAX_PLOTTED_VIOLATIONS:
-            idx = np.linspace(0, len(violations) - 1, MAX_PLOTTED_VIOLATIONS).round().astype(int)
-            violations = violations[idx]
-
-        f_plot = np.unique(np.concatenate([np.linspace(0.0, nyq, PLOT_POINTS + 1), [fp, fst]]))
-        db_plot = np.maximum(_mag_db(h, f_plot, fs), PLOT_DB_FLOOR)
-        plot_data = {
-            "kind": "magnitude_mask",
-            "x_label": "Frequency (Hz)",
-            "y_label": "Magnitude (dB)",
-            "curve": {"x": _rounded(f_plot), "y": _rounded(db_plot)},
-            "mask": [
-                {"label": "passband", "x": [0.0, fp], "lower": -ap, "upper": ap},
-                {"label": "stopband", "x": [fst, nyq], "lower": None, "upper": -as_},
-            ],
-            "violations": [[round(float(x), 4), round(float(y), 4)] for x, y in violations],
-        }
+        plot_data = _plot(h, s, dev, db_pass, db_stop, f_pass, f_stop, bad_pass, bad_stop) if with_plot else {}
 
         if too_many:
             return Score(
@@ -225,5 +201,47 @@ def _mag_db(h: np.ndarray, f: np.ndarray, fs: float) -> np.ndarray:
     return 20.0 * np.log10(np.maximum(np.abs(resp), MAG_FLOOR))
 
 
-def _rounded(a: np.ndarray, digits: int = 4) -> list[float]:
-    return [round(float(v), digits) for v in a]
+def _plot(h, s, dev, db_pass, db_stop, f_pass, f_stop, bad_pass, bad_stop) -> dict[str, Any]:
+    fs = s["sample_rate_hz"]
+    fp, fst = s["passband_edge_hz"], s["stopband_edge_hz"]
+    ap, as_ = s["passband_ripple_db"], s["stopband_atten_db"]
+    nyq = fs / 2
+
+    f_full = np.unique(np.concatenate([np.linspace(0.0, nyq, PLOT_POINTS + 1), [fp, fst]]))
+    db_full = _mag_db(h, f_full, fs)
+    y_bot = math.floor((-as_ - 40) / 20) * 20
+    y_top = max(10.0, math.ceil((float(np.max(db_full)) + 3) / 10) * 10)
+    full = plot.panel(
+        "Magnitude response",
+        "Frequency (Hz)",
+        "Magnitude (dB)",
+        [plot.series("Answer", f_full, np.maximum(db_full, y_bot))],
+        x_range=(0.0, nyq),
+        y_range=(y_bot, y_top),
+        forbidden_list=[plot.forbidden(fst, nyq, -as_, None, "stopband")],
+        markers=[plot.marker("x", fp, "passband edge"), plot.marker("x", fst, "stopband edge")],
+        violation_points=plot.violations(
+            np.concatenate([f_pass[bad_pass], f_stop[bad_stop]]),
+            np.maximum(np.concatenate([db_pass[bad_pass], db_stop[bad_stop]]), y_bot),
+        ),
+        note="The passband limits are too thin to see at this scale; see the passband detail.",
+    )
+
+    x1 = fp + 0.12 * (fst - fp)
+    span = max(2 * ap, min(1.15 * dev, 40.0))
+    f_det = np.linspace(0.0, x1, 801)
+    detail = plot.panel(
+        "Passband detail",
+        "Frequency (Hz)",
+        "Magnitude (dB)",
+        [plot.series("Answer", f_det, np.clip(_mag_db(h, f_det, fs), -span, span))],
+        x_range=(0.0, x1),
+        y_range=(-span, span),
+        forbidden_list=[
+            plot.forbidden(0.0, fp, ap, None, "above ripple limit"),
+            plot.forbidden(0.0, fp, None, -ap, "below ripple limit"),
+        ],
+        markers=[plot.marker("x", fp, "passband edge")],
+        violation_points=plot.violations(f_pass[bad_pass], np.clip(db_pass[bad_pass], -span, span)),
+    )
+    return plot.plot(full, detail)
