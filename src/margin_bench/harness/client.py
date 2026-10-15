@@ -55,9 +55,31 @@ class Completion:
         return asdict(self)
 
 
+@dataclass
+class ChatTurn:
+    """One assistant turn of a tool-using conversation."""
+
+    message: dict[str, Any]  # appended to the conversation as is
+    text: str
+    tool_calls: list[dict[str, Any]]  # {"id", "name", "arguments" (JSON string)}
+    reasoning: str | None = None
+    finish_reason: str | None = None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    reasoning_tokens: int | None = None
+    cost_usd: float | None = None
+    model_served: str | None = None
+    provider_served: str | None = None
+    latency_s: float | None = None
+
+
 class ApiError(Exception):
     """The API call failed. Not the model's fault, so it is retried on resume."""
 
 
 class ModelClient(Protocol):
     def complete(self, prompt: str, settings: Settings) -> Completion: ...
+
+
+class ChatClient(Protocol):
+    def chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]], settings: Settings) -> ChatTurn: ...

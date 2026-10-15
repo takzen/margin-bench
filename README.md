@@ -2,22 +2,96 @@
 
 # margin-bench
 
-Can a language model design to spec?
+Can a language model do engineering work: run a plant, commission a control loop, design to spec?
 
-margin-bench gives models engineering design tasks in three domains: digital signal
-processing, electronics and control systems. The model gets a specification and answers
-with a design: filter taps, fixed-point coefficients, component values, controller
-gains. The answer is graded by measurement or simulation (scipy, python-control,
-ngspice), never by another model. A filter either meets its mask or it doesn't, and the
-benchmark shows by how much.
+margin-bench has two tracks. Both are graded by simulation, never by another model.
+
+* **Playground.** The model gets a simulated plant and tools to operate it. It runs experiments, reads
+  the trends, changes settings and checks the result, as an engineer would, then hands over. An
+  acceptance test on the plant decides. Every step, every thought the model shares and every second of
+  plant time can be replayed on the site, or watched live while the model works.
+* **Design tasks.** One-shot design to spec in DSP, electronics and control: filter taps, fixed-point
+  coefficients, component values, controller gains, graded with scipy, python-control and ngspice.
 
 [![tests](https://github.com/takzen/margin-bench/actions/workflows/tests.yml/badge.svg)](https://github.com/takzen/margin-bench/actions/workflows/tests.yml)
 
-**Status:** all nine task families of the first version are implemented and tested. No
-model has been run yet, so there are no results. One family has been reviewed and
-accepted by the author; the other eight are awaiting review.
+**Status:** the playground has its first environment, `process.tank_level`; more plants will follow.
+All nine design task families are implemented. No model has been run yet, so there are no results.
 
-## How a task is graded
+## Playground
+
+### `process.tank_level`: commission a level loop
+
+A vertical tank, filled through a control valve and drained by gravity, so the outflow follows the
+square root of the level and the downstream demand. The level transmitter reads through a transport
+delay and adds noise; the valve actuator has its own lag. A PID block (sample time 0.5 s, ideal form,
+percent of span) drives the valve. Tank size, valve size, delays and noise come from the seed and are
+not told to the model.
+
+The model gets these tools:
+
+| Tool | What it does |
+|---|---|
+| `set_manual(valve_percent)` | controller to manual, valve output by hand |
+| `set_auto(setpoint_m)` | controller to automatic (or a new setpoint) |
+| `set_tuning(kc, ti_s, td_s, pv_filter_s, anti_windup)` | change any controller parameter |
+| `set_outlet_demand(percent)` | ask operations to change the draw, 30 to 80 % |
+| `wait(seconds, sample_s)` | let the plant run and return the trend |
+| `submit()` | hand over for the acceptance test |
+
+It has four hours of plant time and 40 tool calls. Plant time moves only when the model lets it run,
+so thinking costs wall time, not plant time. Reaching the high-high (spill) or low-low (dry pump) alarm
+while commissioning counts against it.
+
+The acceptance test runs with the tuning the model left: the tank starts low, the controller switches
+to automatic with setpoint 1.20 m, then the outlet demand steps up and down. The requirements, given
+in the prompt, are: no alarm, inside 1.20 ± 0.03 m within a time limit and staying there, a maximum
+overshoot, recovery into the band within a time limit after each demand step, and a limit on total
+valve travel (a noisy derivative term or an absurd gain makes the valve chatter).
+
+**Difficulty rule.** The limits are the worst result over a family of sensible tunings run through
+the same test on the true plant: SIMC PI (tc equal to the effective delay) with anti-windup, with Kc
+and Ti each scaled by 0.7, 1 and 1.4, plus 10 % slack (50 % on valve travel). So any PI tuning within
+about 40 % of SIMC passes once anti-windup is on.
+
+**Scripted agents**, checked by the test suite on 20 seeds:
+
+* `reference` works only through the tools: it brings the level near the setpoint by hand, runs a 5 %
+  valve step test, fits first order plus dead time (two points, 10 % and 63 %), tunes SIMC PI with
+  anti-windup, checks the demand steps and submits. It passes every seed.
+* `factory` submits the factory tuning without commissioning. It fails every seed.
+* `aggressive` runs the same step test but tunes Ziegler-Nichols PI without anti-windup. The start-up
+  saturates the valve, the integral winds up and the level overshoots by 30 to 40 cm. It fails every seed.
+
+### Running a model on a plant
+
+```sh
+uv run margin-bench play --agent reference --watch                     # scripted engineer, free
+uv run margin-bench play --model anthropic/claude-sonnet-5.5 --effort high          # cost estimate only
+uv run margin-bench play --model anthropic/claude-sonnet-5.5 --effort high --execute --watch
+uv run margin-bench play --model qwen3:32b --base-url http://localhost:11434/v1 --watch   # any OpenAI-compatible server
+```
+
+`--watch` opens the live viewer in the browser: the plant animation, the trend, and every model turn
+and tool call as it happens, with wall time, tokens and cost. Through OpenRouter, nothing is called
+without `--execute`; the run prints an estimate first and stops at `--max-cost` (default $3). An
+episode is written to `results/play/` after every step. API errors end an episode without a score;
+they never count against the model.
+
+```sh
+uv run margin-bench export-play results/play/<episode>.json   # publish it to site/data/play
+uv run margin-bench serve                                     # http://localhost:8765/play.html
+```
+
+| Model (OpenRouter list prices, 2026-10-15) | Typical episode (20 turns) | At the 60-turn limit |
+|---|---|---|
+| `anthropic/claude-sonnet-5.5` | about $1.47 | about $10.41 (stopped at $3) |
+| `openai/gpt-6.1-sol` | about $1.47 | about $10.41 (stopped at $3) |
+| `deepseek/deepseek-v4.1-flash` | about $0.04 | about $0.20 |
+
+## Design tasks
+
+### How a design task is graded
 
 Take `dsp.fir_lowpass_mask`. The prompt gives a sampling rate, passband and stopband
 edges, a passband ripple limit, a stopband attenuation requirement and a maximum number
@@ -37,7 +111,7 @@ response on 4096 frequencies per band, edges included, and compares it with the 
 Every attempt keeps plot data: the response drawn against the spec, with violations in
 red. The site shows it for every attempt.
 
-## Task families
+### Task families
 
 | Domain | Family | What the model designs | Graded by | Review |
 |---|---|---|---|---|
@@ -108,7 +182,7 @@ uv run margin-bench families
 uv run margin-bench prompt dsp.q15_biquad --seed 0        # the exact prompt a model sees
 ```
 
-### Running models
+### Running models on the design tasks
 
 Models are called through [OpenRouter](https://openrouter.ai). Put the key in `.env`
 (gitignored):
@@ -170,6 +244,7 @@ family's reference and negative answers graded like model answers, clearly label
 ```
 src/margin_bench/
   core.py        Task, Score, the TaskFamily protocol
+  play/          playground: environments, the tool-calling loop, episodes, local viewer
   tasks/         task families (generator, grader, reference, negative), by domain
   grading/       answer parsing and validation, continuous scoring, plot data format
   sims/          ngspice through its shared library
@@ -177,8 +252,8 @@ src/margin_bench/
   report/        aggregation with bootstrap intervals, export for the site
 tests/
 runs/            run configs
-results/         raw attempts (JSONL)
-site/            static site and its data
+results/         raw attempts (JSONL) and playground episodes
+site/            static site and its data (play.html is the playground)
 private/         hidden test set seeds and results (gitignored)
 ```
 

@@ -1,0 +1,85 @@
+{
+ "episodes": [
+  {
+   "id": "demo-reference-s0",
+   "env": {
+    "id": "process.tank_level",
+    "title": "Tank level loop",
+    "domain": "control",
+    "seed": 0
+   },
+   "agent": {
+    "kind": "scripted",
+    "name": "reference"
+   },
+   "status": "done",
+   "score": 1.0,
+   "passed": true,
+   "wall_s": 0.25,
+   "model_s": 0.0,
+   "usage": {
+    "model_calls": 0,
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "reasoning_tokens": 0,
+    "cost_usd": 0.0
+   },
+   "tool_calls": 17,
+   "started_at": "2026-10-15T10:06:27+00:00"
+  },
+  {
+   "id": "demo-aggressive-s0",
+   "env": {
+    "id": "process.tank_level",
+    "title": "Tank level loop",
+    "domain": "control",
+    "seed": 0
+   },
+   "agent": {
+    "kind": "scripted",
+    "name": "aggressive"
+   },
+   "status": "done",
+   "score": 0.11642949547218626,
+   "passed": false,
+   "wall_s": 0.09,
+   "model_s": 0.0,
+   "usage": {
+    "model_calls": 0,
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "reasoning_tokens": 0,
+    "cost_usd": 0.0
+   },
+   "tool_calls": 9,
+   "started_at": "2026-10-15T10:06:29+00:00"
+  },
+  {
+   "id": "demo-factory-s0",
+   "env": {
+    "id": "process.tank_level",
+    "title": "Tank level loop",
+    "domain": "control",
+    "seed": 0
+   },
+   "agent": {
+    "kind": "scripted",
+    "name": "factory"
+   },
+   "status": "done",
+   "score": 0.0,
+   "passed": false,
+   "wall_s": 0.03,
+   "model_s": 0.0,
+   "usage": {
+    "model_calls": 0,
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "reasoning_tokens": 0,
+    "cost_usd": 0.0
+   },
+   "tool_calls": 1,
+   "started_at": "2026-10-15T10:06:32+00:00"
+  }
+ ]
+}

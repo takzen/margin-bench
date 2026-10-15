@@ -1,7 +1,9 @@
-"""OpenRouter chat completions client.
+"""Chat completions client for OpenRouter or any OpenAI-compatible server.
 
-Every request sets provider.require_parameters, so a provider that would
-silently ignore a setting (reasoning effort, temperature) is never used.
+On OpenRouter every request sets provider.require_parameters, so a provider
+that would silently ignore a setting (reasoning effort, temperature) is never
+used. Any other base URL (a local Ollama, LM Studio or vLLM server) gets a
+plain OpenAI-style request.
 """
 
 from __future__ import annotations
@@ -12,30 +14,41 @@ from typing import Any
 
 import httpx
 
-from margin_bench.harness.client import ApiError, Completion, Settings
+from margin_bench.harness.client import ApiError, ChatTurn, Completion, Settings
 
 BASE_URL = "https://openrouter.ai/api/v1"
 RETRY_STATUS = {408, 409, 429, 500, 502, 503, 504}
 
 
 def build_body(prompt: str, settings: Settings) -> dict[str, Any]:
-    body: dict[str, Any] = {
-        "model": settings.model,
-        "messages": [{"role": "user", "content": prompt}],
-        "provider": {"require_parameters": True},
-    }
+    return build_chat_body([{"role": "user", "content": prompt}], settings)
+
+
+def build_chat_body(
+    messages: list[dict[str, Any]],
+    settings: Settings,
+    tools: list[dict[str, Any]] | None = None,
+    openrouter: bool = True,
+) -> dict[str, Any]:
+    body: dict[str, Any] = {"model": settings.model, "messages": messages}
+    if tools:
+        body["tools"] = tools
     if settings.max_tokens is not None:
         body["max_tokens"] = settings.max_tokens
     if settings.temperature is not None:
         body["temperature"] = settings.temperature
-    if settings.reasoning_effort is not None:
-        body["reasoning"] = {"effort": settings.reasoning_effort}
-    if settings.providers:
-        body["provider"].update(order=list(settings.providers), allow_fallbacks=False)
+    if openrouter:
+        body["provider"] = {"require_parameters": True}
+        if settings.reasoning_effort is not None:
+            body["reasoning"] = {"effort": settings.reasoning_effort}
+        if settings.providers:
+            body["provider"].update(order=list(settings.providers), allow_fallbacks=False)
+    elif settings.reasoning_effort is not None:
+        body["reasoning_effort"] = settings.reasoning_effort
     return body
 
 
-def parse_response(data: dict[str, Any], latency_s: float) -> Completion:
+def _choice(data: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
     if data.get("error"):
         err = data["error"]
         raise ApiError(f"error in response body: {err.get('code')} {err.get('message')}")
@@ -43,9 +56,12 @@ def parse_response(data: dict[str, Any], latency_s: float) -> Completion:
     if not choices:
         raise ApiError("response has no choices")
     choice = choices[0]
-    message = choice.get("message") or {}
     usage = data.get("usage") or {}
-    details = usage.get("completion_tokens_details") or {}
+    return choice, choice.get("message") or {}, usage, usage.get("completion_tokens_details") or {}
+
+
+def parse_response(data: dict[str, Any], latency_s: float) -> Completion:
+    choice, message, usage, details = _choice(data)
     return Completion(
         text=message.get("content") or "",
         reasoning=message.get("reasoning"),
@@ -62,22 +78,60 @@ def parse_response(data: dict[str, Any], latency_s: float) -> Completion:
     )
 
 
+def parse_chat(data: dict[str, Any], latency_s: float) -> ChatTurn:
+    choice, message, usage, details = _choice(data)
+    calls = []
+    for c in message.get("tool_calls") or []:
+        fn = c.get("function") or {}
+        calls.append({
+            "id": c.get("id") or f"call_{len(calls)}",
+            "name": fn.get("name") or "",
+            "arguments": fn.get("arguments") or "{}",
+        })
+    # The assistant message goes back into the conversation unchanged, reasoning
+    # details included, so reasoning models keep their train of thought across tool calls.
+    echo: dict[str, Any] = {"role": "assistant", "content": message.get("content") or ""}
+    if calls:
+        echo["tool_calls"] = [
+            {"id": c["id"], "type": "function", "function": {"name": c["name"], "arguments": c["arguments"]}}
+            for c in calls
+        ]
+    if message.get("reasoning_details"):
+        echo["reasoning_details"] = message["reasoning_details"]
+    return ChatTurn(
+        message=echo,
+        text=message.get("content") or "",
+        tool_calls=calls,
+        reasoning=message.get("reasoning"),
+        finish_reason=choice.get("finish_reason"),
+        prompt_tokens=usage.get("prompt_tokens"),
+        completion_tokens=usage.get("completion_tokens"),
+        reasoning_tokens=details.get("reasoning_tokens"),
+        cost_usd=usage.get("cost"),
+        model_served=data.get("model"),
+        provider_served=data.get("provider"),
+        latency_s=latency_s,
+    )
+
+
 class OpenRouterClient:
     def __init__(
         self,
-        api_key: str,
+        api_key: str | None,
         *,
+        base_url: str = BASE_URL,
         max_retries: int = 5,
         timeout_s: float = 900.0,
         transport: httpx.BaseTransport | None = None,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
+        headers = {"X-OpenRouter-Title": "margin-bench"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        self.openrouter = base_url.rstrip("/") == BASE_URL
         self._http = httpx.Client(
-            base_url=BASE_URL,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "X-OpenRouter-Title": "margin-bench",
-            },
+            base_url=base_url,
+            headers=headers,
             timeout=httpx.Timeout(timeout_s, connect=30.0),
             transport=transport,
         )
@@ -85,7 +139,14 @@ class OpenRouterClient:
         self._sleep = sleep
 
     def complete(self, prompt: str, settings: Settings) -> Completion:
-        body = build_body(prompt, settings)
+        body = build_chat_body([{"role": "user", "content": prompt}], settings, openrouter=self.openrouter)
+        return self._request(body, parse_response)
+
+    def chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]], settings: Settings) -> ChatTurn:
+        body = build_chat_body(messages, settings, tools, openrouter=self.openrouter)
+        return self._request(body, parse_chat)
+
+    def _request(self, body: dict[str, Any], parse: Callable[[dict[str, Any], float], Any]) -> Any:
         last_error = "no attempt made"
         for attempt in range(self._max_retries + 1):
             if attempt:
@@ -103,7 +164,7 @@ class OpenRouterClient:
             if resp.status_code != 200:
                 raise ApiError(f"HTTP {resp.status_code}: {resp.text[:500]}")
             try:
-                return parse_response(resp.json(), latency)
+                return parse(resp.json(), latency)
             except ApiError as e:
                 last_error = str(e)
                 continue

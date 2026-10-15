@@ -1,0 +1,138 @@
+/* Playground: a plant scene, its trend and the model's log, side by side. */
+:root {
+  --water: #3f8fdc;
+  --water-top: #77b3ec;
+  --steel: #8a96a3;
+  --steel-fill: #eef1f4;
+  --pipe: #b9c2cc;
+  --signal: #7d8794;
+  --flow: #2a78d6;
+  --measured: rgba(42, 120, 214, 0.35);
+  --output: #c26a00;
+  --demand: #7d8794;
+  --hold: rgba(42, 120, 214, 0.08);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --water: #2f78c4; --water-top: #5a9fe0; --steel: #6f7b88; --steel-fill: #1d2228; --pipe: #3d4650;
+    --signal: #8b95a1; --flow: #5aa2ee; --measured: rgba(90, 162, 238, 0.35); --output: #f0a040; --demand: #8b95a1;
+    --hold: rgba(90, 162, 238, 0.1);
+  }
+}
+
+.play h1 { font-family: var(--font-display); font-stretch: 85%; font-weight: 680; margin: 0; }
+.play h2 { font-family: var(--font-display); font-stretch: 90%; font-weight: 650; font-size: 17px; margin: 0; }
+
+.btn {
+  font: inherit; font-size: 14px; font-weight: 600; border: 0; border-radius: 8px; padding: 7px 14px; cursor: pointer;
+  background: var(--curve); color: #fff; min-height: 34px;
+}
+.btn.ghost { background: var(--chip); color: var(--ink); font-weight: 500; }
+.btn:hover { filter: brightness(1.08); }
+
+/* Run list */
+.ep-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; padding-block: 18px 32px; }
+.ep-card {
+  display: grid; gap: 8px; text-decoration: none; color: var(--ink); background: var(--surface);
+  border-radius: 12px; box-shadow: 0 0 0 1px var(--rule); padding: 16px;
+}
+.ep-card:hover { box-shadow: 0 0 0 1px var(--curve); }
+.ep-card .who { font-weight: 650; font-size: 16px; overflow-wrap: anywhere; }
+.ep-card .meta { color: var(--ink-2); font-size: 13px; }
+.ep-card .nums { font-family: var(--font-data); font-size: 12.5px; color: var(--ink-2); display: flex; flex-wrap: wrap; gap: 4px 14px; }
+
+/* Episode header */
+.ep-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; padding-block: 22px 14px; }
+.ep-title { display: grid; gap: 4px; min-width: 0; }
+.ep-title h1 { font-size: clamp(24px, 3.4vw, 34px); line-height: 1.1; overflow-wrap: anywhere; }
+.ep-title p { margin: 0; color: var(--ink-2); }
+.back-link { font-size: 14px; text-decoration: none; justify-self: start; }
+.ep-stats { display: flex; flex-wrap: wrap; gap: 6px 22px; margin: 0; }
+.ep-stats div { display: grid; }
+.ep-stats dt { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.ep-stats dd { margin: 0; font-family: var(--font-data); font-size: 16px; font-variant-numeric: tabular-nums; }
+.badge { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 650; padding: 3px 10px; border-radius: 999px; }
+.badge.pass { background: var(--good-wash); color: var(--good-ink); }
+.badge.fail { background: var(--critical-wash); color: var(--critical); }
+.badge.live { background: var(--warn-wash); color: var(--warn-ink); }
+.badge.live::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; animation: blink 1.2s infinite; }
+@keyframes blink { 50% { opacity: 0.25; } }
+@media (prefers-reduced-motion: reduce) { .badge.live::before { animation: none; } }
+
+/* Stage: scene + log */
+.stage { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+.scene-panel { display: grid; gap: 10px; position: relative; }
+.phase { font-size: 12px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-2); }
+.scene { width: 100%; height: auto; display: block; }
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: 13px; color: var(--ink-2); }
+.controls select { font: inherit; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--axis); background: var(--surface); color: var(--ink); }
+.controls .hold { display: inline-flex; gap: 6px; align-items: center; }
+.clock { margin-left: auto; color: var(--ink); font-size: 13px; }
+#scrub { width: 100%; accent-color: var(--curve); margin: 0; }
+.marks { position: relative; height: 10px; margin-top: -6px; }
+.marks span { position: absolute; top: 0; width: 2px; height: 8px; border-radius: 1px; background: var(--axis); transform: translateX(-1px); }
+.marks span.model { background: var(--curve); }
+.marks span.err { background: var(--critical); }
+.marks span.phase { background: var(--ink); width: 2px; height: 10px; }
+
+.log-panel { display: grid; gap: 10px; max-height: min(760px, 86vh); grid-template-rows: auto minmax(0, 1fr); }
+.log { position: relative; list-style: none; margin: 0; padding: 0 4px 0 0; overflow-y: auto; display: grid; gap: 8px; align-content: start; }
+.log li { border-radius: 10px; padding: 9px 11px; box-shadow: 0 0 0 1px var(--rule); cursor: pointer; transition: box-shadow 0.15s, background 0.15s; }
+.log li:hover { box-shadow: 0 0 0 1px var(--axis); }
+.log li.current { box-shadow: 0 0 0 2px var(--curve); background: var(--hold); }
+.log li.future { opacity: 0.42; }
+.log .who { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; font-size: 12px; color: var(--muted); font-family: var(--font-data); }
+.log .who b { font-family: var(--font-body); font-size: 13px; color: var(--ink); }
+.log .text { white-space: pre-wrap; font-size: 14px; margin-top: 4px; overflow-wrap: anywhere; }
+.log .call { font-family: var(--font-data); font-size: 12.5px; overflow-wrap: anywhere; }
+.log .call .fn { color: var(--curve); font-weight: 500; }
+.log .res { font-size: 13px; color: var(--ink-2); margin-top: 3px; }
+.log .res.err { color: var(--critical); font-weight: 600; }
+.log details { margin-top: 6px; font-size: 13px; }
+.log details summary { cursor: pointer; color: var(--ink-2); }
+.log details pre { white-space: pre-wrap; max-height: 280px; overflow: auto; font-size: 12px; background: var(--bg); border-radius: 6px; padding: 8px; margin: 6px 0 0; }
+.log li.tool { padding-block: 7px; }
+.log li.model .text:empty::before { content: "(no text, only tool calls)"; color: var(--muted); }
+
+/* Trend */
+.trend-panel { display: grid; gap: 8px; margin-top: 14px; position: relative; }
+.chart-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--ink-2); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { display: inline-block; width: 16px; height: 0; border-top: 2px solid; }
+.legend i.dash { border-top-style: dashed; }
+.legend i.box { height: 10px; border: 0; border-radius: 2px; }
+.trend { width: 100%; height: auto; display: block; touch-action: pan-y; }
+.trend text { font-family: var(--font-data); font-size: 11px; fill: var(--muted); }
+.trend .title { font-family: var(--font-body); font-size: 12px; font-weight: 600; fill: var(--ink-2); }
+.readout {
+  position: absolute; pointer-events: none; background: var(--surface); box-shadow: 0 0 0 1px var(--rule), 0 4px 14px rgba(0, 0, 0, 0.12);
+  border-radius: 8px; padding: 6px 9px; font-size: 12px; line-height: 1.45; white-space: nowrap; color: var(--ink);
+}
+
+/* Result */
+.result { display: grid; gap: 14px; margin-top: 14px; }
+.result .verdict-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.result .verdict-line .score { font-family: var(--font-data); font-size: 28px; font-weight: 500; }
+.result table td.ok { color: var(--good-ink); font-weight: 600; }
+.result table td.no { color: var(--critical); font-weight: 600; }
+.result .reveal { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+.result .reveal h3 { margin: 0 0 6px; font-size: 14px; }
+.result .reveal dl { display: grid; grid-template-columns: auto auto; gap: 2px 12px; margin: 0; font-size: 13.5px; justify-content: start; }
+.result .reveal dt { color: var(--ink-2); }
+.result .reveal dd { margin: 0; font-family: var(--font-data); }
+
+.prompt { margin-top: 14px; }
+.prompt summary { cursor: pointer; font-weight: 600; }
+.prompt pre { white-space: pre-wrap; font-size: 13px; margin: 10px 0 0; overflow-wrap: anywhere; }
+
+/* Scene parts */
+.scene text { font-family: var(--font-data); font-size: 11px; fill: var(--ink-2); }
+.scene .tag { font-family: var(--font-body); font-weight: 650; font-size: 11px; fill: var(--ink); }
+.scene .big { font-size: 14px; fill: var(--ink); font-weight: 500; }
+
+@media (max-width: 900px) {
+  .stage { grid-template-columns: minmax(0, 1fr); }
+  .log-panel { max-height: 70vh; }
+  .clock { margin-left: 0; width: 100%; }
+}
