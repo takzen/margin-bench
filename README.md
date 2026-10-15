@@ -184,4 +184,5 @@ private/         hidden test set seeds and results (gitignored)
 
 ## License
 
-Not chosen yet. Until a license file is added, the default copyright rules apply.
+MIT, see [LICENSE](LICENSE). It covers the code, the task generators, the run configs and the
+published results.
