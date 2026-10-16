@@ -1,5 +1,6 @@
 "use strict";
 // margin-bench playground: replays (or follows live) one episode of a model operating a simulated plant.
+// The chart, log and result are generic (driven by episode.view); each plant kind has its own scene.
 
 const $ = (id) => document.getElementById(id);
 const NS = "http://www.w3.org/2000/svg";
@@ -8,9 +9,14 @@ const isNum = (v) => typeof v === "number" && isFinite(v);
 const fx = (v, d) => (isNum(v) ? v.toFixed(d) : "–");
 const int = (v) => (isNum(v) ? Math.round(v).toLocaleString("en-US") : "–");
 const usd = (v) => (!isNum(v) ? "–" : v === 0 ? "$0" : v < 0.01 ? `$${v.toFixed(4)}` : `$${v.toFixed(2)}`);
+const COLORS = {
+  curve: "var(--curve)", measured: "var(--measured)", ink: "var(--ink)", output: "var(--output)",
+  demand: "var(--demand)", critical: "var(--critical)", muted: "var(--muted)", good: "var(--good)",
+};
 
 function clock(s) {
   if (!isNum(s)) return "–";
+  if (s < 60 && s % 1) return `${s.toFixed(1)} s`;
   s = Math.max(0, Math.round(s));
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
   return h ? `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}` : `${m}:${String(sec).padStart(2, "0")}`;
@@ -27,33 +33,32 @@ function el(tag, attrs = {}, parent) {
   if (parent) parent.appendChild(e);
   return e;
 }
+function txt(parent, x, y, text, attrs = {}) {
+  const t = el("text", { x, y, ...attrs }, parent);
+  t.textContent = text;
+  return t;
+}
 
 const S = {
   ep: null, liveUrl: null, phases: [], total: 0, T: 0, playing: false, speed: 20,
-  hold: true, holdUntil: 0, next: 0, cur: -1, follow: true, lastTs: 0, chartPhase: null, scene: null,
+  hold: true, holdUntil: 0, next: 0, cur: -1, follow: true, lastTs: 0, chart: null, scene: null, kind: null,
 };
-const COL = { t: 0, level: 1, meas: 2, out: 3, valve: 4, outlet: 5, sp: 6 };
 
 // ---------- data ----------
 
 function buildPhases(ep) {
-  const v = ep.view || {};
   const phases = [];
-  const com = v.commissioning;
-  if (com && com.rows.length) {
-    phases.push({ key: "commissioning", name: "Commissioning", rows: com.rows, t0: 0, dur: Math.max(1, com.rows[com.rows.length - 1][0]) });
-  }
-  const acc = v.acceptance;
-  if (acc && acc.rows.length) {
-    const t0 = phases.length ? phases[0].dur : 0;
-    phases.push({ key: "acceptance", name: "Acceptance test", rows: acc.rows, t0, dur: acc.rows[acc.rows.length - 1][0], events: acc.events || [] });
+  let t0 = 0;
+  for (const p of (ep.view && ep.view.phases) || []) {
+    if (!p.rows.length) continue;
+    const dur = Math.max(1, p.rows[p.rows.length - 1][0]);
+    phases.push({ ...p, t0, dur });
+    t0 += dur;
   }
   return phases;
 }
 
-function anchorOf(step) {
-  return step.kind === "model" ? step.sim_t : step.sim_t0;
-}
+const anchorOf = (step) => (step.kind === "model" ? step.sim_t : step.sim_t0);
 
 function phaseAt(T) {
   let p = S.phases[0];
@@ -69,258 +74,379 @@ function rowAt(rows, t) {
     const mid = (lo + hi) >> 1;
     if (rows[mid][0] <= t) lo = mid; else hi = mid;
   }
+  if (!S.ep.view.smooth) return rows[lo];
   const a = rows[lo], b = rows[hi], w = (t - a[0]) / (b[0] - a[0] || 1);
-  const lerp = (i) => (isNum(a[i]) && isNum(b[i]) ? a[i] + w * (b[i] - a[i]) : a[i]);
-  return [t, lerp(1), a[2], lerp(3), lerp(4), a[5], a[6]];
+  return a.map((v, i) => (i === 0 ? t : isNum(v) && isNum(b[i]) ? v + w * (b[i] - v) : v));
 }
 
-// ---------- scene ----------
+// The newest tool result (or visual) of a given kind at or before the current step.
+function latestStep(test) {
+  const steps = S.ep.steps;
+  for (let i = Math.min(S.cur, steps.length - 1); i >= 0; i--) if (test(steps[i])) return steps[i];
+  return null;
+}
+
+// ---------- scene: tank ----------
 
 const TANK = { x: 200, w: 160, top: 40, bottom: 360 };
-const ym = (m, span) => TANK.bottom - (m / span) * (TANK.bottom - TANK.top);
+
+const tankScene = {
+  build(svg, scene) {
+    const span = scene.span_m;
+    const ym = (m) => TANK.bottom - (m / span) * (TANK.bottom - TANK.top);
+    const sc = { ym };
+    el("path", { d: "M420 216 V384 H60 V330", fill: "none", stroke: "var(--signal)", "stroke-width": 1.2, "stroke-dasharray": "5 4" }, svg);
+    el("path", { d: "M60 130 V24 H98", fill: "none", stroke: "var(--signal)", "stroke-width": 1.2, "stroke-dasharray": "5 4" }, svg);
+    el("line", { x1: 0, y1: 52, x2: TANK.x + 4, y2: 52, stroke: "var(--pipe)", "stroke-width": 11 }, svg);
+    sc.inFlow = el("line", { x1: 0, y1: 52, x2: TANK.x + 4, y2: 52, stroke: "var(--flow)", "stroke-width": 3, "stroke-dasharray": "7 9" }, svg);
+    el("line", { x1: TANK.x + TANK.w - 4, y1: 346, x2: 540, y2: 346, stroke: "var(--pipe)", "stroke-width": 11 }, svg);
+    sc.outFlow = el("line", { x1: TANK.x + TANK.w - 4, y1: 346, x2: 540, y2: 346, stroke: "var(--flow)", "stroke-width": 3, "stroke-dasharray": "7 9" }, svg);
+    el("rect", { x: TANK.x, y: TANK.top, width: TANK.w, height: TANK.bottom - TANK.top, rx: 6, fill: "var(--steel-fill)" }, svg);
+    sc.water = el("rect", { x: TANK.x + 2, width: TANK.w - 4, fill: "var(--water)", opacity: 0.85 }, svg);
+    sc.surface = el("line", { x1: TANK.x + 2, x2: TANK.x + TANK.w - 2, stroke: "var(--water-top)", "stroke-width": 3 }, svg);
+    sc.stream = el("rect", { x: TANK.x + 3, width: 6, y: 57, fill: "var(--water)", opacity: 0.7 }, svg);
+    sc.band = el("rect", { x: TANK.x + 2, width: TANK.w - 4, fill: "var(--ink)", opacity: 0.1 }, svg);
+    sc.sp = el("line", { x1: TANK.x - 6, x2: TANK.x + TANK.w + 6, stroke: "var(--ink)", "stroke-width": 1.5, "stroke-dasharray": "6 4" }, svg);
+    sc.spLabel = el("text", { x: TANK.x + TANK.w + 10, class: "tag" }, svg);
+    for (const [m, label] of [[scene.hh_m, "HH"], [scene.ll_m, "LL"]]) {
+      el("line", { x1: TANK.x, x2: TANK.x + TANK.w, y1: ym(m), y2: ym(m), stroke: "var(--critical)", "stroke-width": 1.2, "stroke-dasharray": "3 3" }, svg);
+      txt(svg, TANK.x + TANK.w + 10, ym(m) + 4, `${label} ${m.toFixed(2)} m`);
+    }
+    sc.shell = el("rect", { x: TANK.x, y: TANK.top, width: TANK.w, height: TANK.bottom - TANK.top, rx: 6, fill: "none", stroke: "var(--steel)", "stroke-width": 3 }, svg);
+    for (let m = 0; m <= span + 1e-9; m += 0.5) {
+      el("line", { x1: TANK.x - 6, x2: TANK.x, y1: ym(m), y2: ym(m), stroke: "var(--steel)" }, svg);
+      txt(svg, TANK.x - 9, ym(m) + 4, m.toFixed(1), { "text-anchor": "end" });
+    }
+    sc.alarm = el("text", { x: TANK.x + TANK.w / 2, y: TANK.top + 22, "text-anchor": "middle", class: "tag", fill: "var(--critical)" }, svg);
+    sc.levelText = el("text", { x: TANK.x + TANK.w / 2, "text-anchor": "middle", class: "big" }, svg);
+    el("polygon", { points: "96,40 124,64 124,40 96,64", fill: "var(--surface)", stroke: "var(--ink-2)", "stroke-width": 1.5 }, svg);
+    el("line", { x1: 110, y1: 52, x2: 110, y2: 30, stroke: "var(--ink-2)", "stroke-width": 1.5 }, svg);
+    el("path", { d: "M98 30 A12 12 0 0 1 122 30 Z", fill: "var(--surface)", stroke: "var(--ink-2)", "stroke-width": 1.5 }, svg);
+    txt(svg, 130, 26, "FV-101", { class: "tag" });
+    sc.valveText = el("text", { x: 110, y: 82, "text-anchor": "middle" }, svg);
+    sc.valveBar = el("rect", { x: 86, y: 88, height: 4, rx: 2, fill: "var(--output)" }, svg);
+    el("rect", { x: 86, y: 88, width: 48, height: 4, rx: 2, fill: "none", stroke: "var(--axis)" }, svg);
+    el("polygon", { points: "441,334 469,358 469,334 441,358", fill: "var(--surface)", stroke: "var(--ink-2)", "stroke-width": 1.5 }, svg);
+    el("line", { x1: 455, y1: 346, x2: 455, y2: 324, stroke: "var(--ink-2)", "stroke-width": 1.5 }, svg);
+    el("line", { x1: 446, y1: 324, x2: 464, y2: 324, stroke: "var(--ink-2)", "stroke-width": 2 }, svg);
+    txt(svg, 455, 316, "demand", { "text-anchor": "middle", class: "tag" });
+    sc.demandText = el("text", { x: 455, y: 376, "text-anchor": "middle" }, svg);
+    el("line", { x1: TANK.x + TANK.w, y1: 200, x2: 404, y2: 200, stroke: "var(--steel)", "stroke-width": 2 }, svg);
+    el("circle", { cx: 420, cy: 200, r: 16, fill: "var(--surface)", stroke: "var(--ink-2)", "stroke-width": 1.5 }, svg);
+    txt(svg, 420, 204, "LT", { "text-anchor": "middle", class: "tag" });
+    sc.ltText = el("text", { x: 442, y: 204 }, svg);
+    el("rect", { x: 10, y: 130, width: 150, height: 200, rx: 8, fill: "var(--surface)", stroke: "var(--ink-2)", "stroke-width": 1.2 }, svg);
+    txt(svg, 20, 150, "LIC-101", { class: "tag" });
+    sc.modeBg = el("rect", { x: 100, y: 138, width: 52, height: 17, rx: 4 }, svg);
+    sc.mode = el("text", { x: 126, y: 151, "text-anchor": "middle", class: "tag" }, svg);
+    sc.fp = {};
+    ["SP", "PV", "OUT", "Kc", "Ti", "Td", "PV filter", "anti-windup"].forEach((r, i) => {
+      txt(svg, 20, 176 + i * 19, r);
+      sc.fp[r] = el("text", { x: 150, y: 176 + i * 19, "text-anchor": "end", fill: "var(--ink)" }, svg);
+    });
+    sc.dashIn = 0; sc.dashOut = 0;
+    return sc;
+  },
+  draw(sc, scene, row, phase, dt) {
+    const [, h, meas, out, valve, outlet, sp] = row;
+    const y = sc.ym(h);
+    sc.water.setAttribute("y", y);
+    sc.water.setAttribute("height", Math.max(0, TANK.bottom - 2 - y));
+    sc.surface.setAttribute("y1", y); sc.surface.setAttribute("y2", y);
+    sc.levelText.setAttribute("y", Math.min(TANK.bottom - 12, Math.max(TANK.top + 40, y + 24)));
+    sc.levelText.textContent = `${h.toFixed(3)} m`;
+    const qIn = Math.max(0, valve) / 100, qOut = (outlet / 100) * Math.sqrt(Math.max(0, h) / 1.2) * 1.1;
+    sc.stream.setAttribute("height", Math.max(0, y - 57));
+    sc.stream.setAttribute("opacity", qIn > 0.005 ? 0.25 + 0.6 * Math.min(1, qIn) : 0);
+    sc.stream.setAttribute("width", 2 + 7 * Math.min(1, qIn));
+    sc.dashIn -= dt * 60 * qIn; sc.dashOut -= dt * 60 * qOut;
+    sc.inFlow.setAttribute("stroke-dashoffset", sc.dashIn);
+    sc.inFlow.setAttribute("opacity", qIn > 0.005 ? 0.9 : 0.15);
+    sc.outFlow.setAttribute("stroke-dashoffset", sc.dashOut);
+    const auto = isNum(sp);
+    for (const e of [sc.sp, sc.spLabel, sc.band]) e.setAttribute("visibility", auto ? "visible" : "hidden");
+    if (auto) {
+      sc.sp.setAttribute("y1", sc.ym(sp)); sc.sp.setAttribute("y2", sc.ym(sp));
+      sc.spLabel.setAttribute("y", sc.ym(sp) - 6);
+      sc.spLabel.textContent = `SP ${sp.toFixed(2)} m`;
+      sc.band.setAttribute("y", sc.ym(sp + scene.band_m));
+      sc.band.setAttribute("height", sc.ym(sp - scene.band_m) - sc.ym(sp + scene.band_m));
+    }
+    const alarm = h >= scene.hh_m ? "HIGH-HIGH: tank spills" : h <= scene.ll_m ? "LOW-LOW: pump runs dry" : "";
+    sc.alarm.textContent = alarm;
+    sc.shell.setAttribute("stroke", alarm ? "var(--critical)" : "var(--steel)");
+    sc.valveText.textContent = `valve ${valve.toFixed(1)} %`;
+    sc.valveBar.setAttribute("width", (48 * Math.min(100, Math.max(0, valve))) / 100);
+    sc.demandText.textContent = `${outlet.toFixed(0)} %`;
+    sc.ltText.textContent = `${meas.toFixed(3)} m`;
+    sc.mode.textContent = auto ? "AUTO" : "MAN";
+    sc.modeBg.setAttribute("fill", auto ? "var(--good-wash)" : "var(--warn-wash)");
+    sc.mode.setAttribute("fill", auto ? "var(--good-ink)" : "var(--warn-ink)");
+    let tu = scene.final_tuning;
+    if (phase.key !== "acceptance") {
+      const s = latestStep((st) => st.kind === "tool" && st.result && st.result.tuning);
+      tu = s ? s.result.tuning : (S.ep.steps.find((st) => st.result && st.result.tuning) || {}).result?.tuning || {};
+    }
+    const f = sc.fp;
+    f.SP.textContent = auto ? `${sp.toFixed(2)} m` : "–";
+    f.PV.textContent = `${meas.toFixed(3)} m`;
+    f.OUT.textContent = `${out.toFixed(1)} %`;
+    f.Kc.textContent = fx(tu.kc, 3);
+    f.Ti.textContent = isNum(tu.ti_s) ? (tu.ti_s > 0 ? `${tu.ti_s.toFixed(1)} s` : "off") : "–";
+    f.Td.textContent = isNum(tu.td_s) ? `${tu.td_s.toFixed(1)} s` : "–";
+    f["PV filter"].textContent = isNum(tu.pv_filter_s) ? `${tu.pv_filter_s.toFixed(1)} s` : "–";
+    f["anti-windup"].textContent = tu.anti_windup == null ? "–" : tu.anti_windup ? "on" : "off";
+  },
+};
+
+// ---------- scene: weighing scale ----------
+
+const SCOPE = { x: 10, y: 236, w: 255, h: 150 };
+const SPEC = { x: 275, y: 236, w: 255, h: 150 };
+
+function blockLabel(b) {
+  switch (b.type) {
+    case "moving_average": return [`MA`, `n ${b.n}`];
+    case "notch": return [`notch`, `${+b.f0_hz.toFixed(2)} Hz Q${+b.q.toFixed(1)}`];
+    case "lowpass": return [`${b.kind} ${b.order}`, `${+b.fc_hz.toFixed(2)} Hz`];
+    case "fir_lowpass": return [`FIR ${b.taps}`, `${+b.fc_hz.toFixed(2)} Hz`];
+    case "decimate": return [`↓ ${b.factor}`, `to ${+(b.rate_in_hz / b.factor).toFixed(1)} Hz`];
+    default: return [b.type, ""];
+  }
+}
+
+function screen(svg, box, title) {
+  el("rect", { x: box.x, y: box.y, width: box.w, height: box.h, rx: 6, fill: "var(--screen)" }, svg);
+  for (let i = 1; i < 8; i++) el("line", { x1: box.x + (box.w * i) / 8, x2: box.x + (box.w * i) / 8, y1: box.y, y2: box.y + box.h, stroke: "var(--screen-grid)" }, svg);
+  for (let i = 1; i < 6; i++) el("line", { x1: box.x, x2: box.x + box.w, y1: box.y + (box.h * i) / 6, y2: box.y + (box.h * i) / 6, stroke: "var(--screen-grid)" }, svg);
+  txt(svg, box.x, box.y - 6, title, { class: "tag" });
+  const label = txt(svg, box.x + 6, box.y + 14, "", { class: "screen-text" });
+  const path = el("path", { fill: "none", stroke: "var(--trace)", "stroke-width": 1.4 }, svg);
+  return { label, path };
+}
+
+const scaleScene = {
+  build(svg, scene) {
+    const sc = {};
+    // platform scale
+    el("rect", { x: 22, y: 128, width: 150, height: 12, rx: 3, fill: "var(--steel)" }, svg);
+    el("rect", { x: 86, y: 108, width: 22, height: 20, rx: 2, fill: "var(--steel-fill)", stroke: "var(--steel)", "stroke-width": 1.5 }, svg);
+    txt(svg, 97, 122, "LC", { "text-anchor": "middle", class: "tag" });
+    el("rect", { x: 16, y: 100, width: 162, height: 8, rx: 2, fill: "var(--steel)" }, svg);
+    sc.weight = el("g", {}, svg);
+    sc.weightRect = el("rect", { x: 52, width: 90, rx: 4, fill: "var(--weight)", stroke: "var(--ink-2)", "stroke-width": 1 }, sc.weight);
+    sc.weightText = el("text", { x: 97, "text-anchor": "middle", class: "tag", fill: "var(--surface)" }, sc.weight);
+    txt(svg, 97, 156, `platform 0..${scene.full_scale_kg} kg`, { "text-anchor": "middle" });
+    // cable and ADC
+    el("path", { d: "M108 118 H190", fill: "none", stroke: "var(--signal)", "stroke-width": 1.5 }, svg);
+    el("rect", { x: 190, y: 100, width: 64, height: 36, rx: 5, fill: "var(--surface)", stroke: "var(--ink-2)", "stroke-width": 1.2 }, svg);
+    txt(svg, 222, 116, "ADC", { "text-anchor": "middle", class: "tag" });
+    txt(svg, 222, 130, `${scene.fs} Hz`, { "text-anchor": "middle" });
+    // display
+    el("rect", { x: 300, y: 18, width: 228, height: 118, rx: 10, fill: "var(--surface)", stroke: "var(--ink-2)", "stroke-width": 1.2 }, svg);
+    el("rect", { x: 312, y: 30, width: 204, height: 62, rx: 6, fill: "var(--lcd)" }, svg);
+    sc.reading = el("text", { x: 504, y: 76, "text-anchor": "end", class: "lcd" }, svg);
+    txt(svg, 300, 12, "Display, 10 readings/s", { class: "tag" });
+    sc.truth = el("text", { x: 516, y: 108, "text-anchor": "end" }, svg);
+    sc.err = el("text", { x: 516, y: 126, "text-anchor": "end" }, svg);
+    el("path", { d: "M254 118 H270 V60 H300", fill: "none", stroke: "var(--signal)", "stroke-width": 1.2, "stroke-dasharray": "5 4" }, svg);
+    // chain row
+    txt(svg, 10, 172, "Processing chain", { class: "tag" });
+    sc.chain = el("g", {}, svg);
+    sc.cost = el("text", { x: 530, y: 172, "text-anchor": "end" }, svg);
+    sc.scope = screen(svg, SCOPE, "Oscilloscope");
+    sc.spec = screen(svg, SPEC, "Spectrum analyzer");
+    sc.chainKey = null;
+    sc.lastLoad = null;
+    sc.dropAt = 0;
+    return sc;
+  },
+  draw(sc, scene, row, phase) {
+    const [, load, reading, err] = row;
+    // weight drops in when the load changes
+    if (load !== sc.lastLoad) { sc.lastLoad = load; sc.dropAt = performance.now(); }
+    const k = Math.min(1, (performance.now() - sc.dropAt) / 350);
+    const h = load > 0 ? 10 + (52 * load) / scene.full_scale_kg : 0;
+    sc.weight.setAttribute("visibility", load > 0 ? "visible" : "hidden");
+    sc.weight.setAttribute("transform", `translate(0 ${-(1 - k) * (1 - k) * 60})`);
+    sc.weightRect.setAttribute("y", 100 - h); sc.weightRect.setAttribute("height", h);
+    sc.weightText.setAttribute("y", 100 - h / 2 + 4);
+    sc.weightText.textContent = h >= 14 ? `${+load.toFixed(2)} kg` : "";
+    sc.reading.textContent = `${reading.toFixed(3)}`;
+    sc.truth.textContent = `true load ${load.toFixed(3)} kg`;
+    const bad = Math.abs(err) > scene.band_kg;
+    sc.err.textContent = `error ${err >= 0 ? "+" : ""}${err.toFixed(3)} kg`;
+    sc.err.setAttribute("fill", bad ? "var(--critical)" : "var(--good-ink)");
+    // chain in force now
+    let chain = scene.final_chain, cost = scene.final_cost;
+    if (phase.key !== "acceptance") {
+      const s = latestStep((st) => st.kind === "tool" && st.name === "set_chain" && !st.error);
+      chain = s ? s.result.blocks : [];
+      cost = s ? s.result.cost_per_adc_sample : 0;
+    }
+    const key = JSON.stringify(chain);
+    if (key !== sc.chainKey) {
+      sc.chainKey = key;
+      sc.chain.innerHTML = "";
+      const items = [["ADC", `${scene.fs} Hz`], ...chain.map(blockLabel), ["display", "10/s"]];
+      const gap = 10, w = Math.min(92, (520 - gap * (items.length - 1)) / items.length);
+      items.forEach(([a, b], i) => {
+        const x = 10 + i * (w + gap);
+        const end = i === 0 || i === items.length - 1;
+        el("rect", { x, y: 180, width: w, height: 38, rx: 5, fill: end ? "var(--chip)" : "var(--surface)", stroke: end ? "var(--axis)" : "var(--curve)", "stroke-width": 1.2 }, sc.chain);
+        txt(sc.chain, x + w / 2, 196, a, { "text-anchor": "middle", class: "tag" });
+        txt(sc.chain, x + w / 2, 210, b, { "text-anchor": "middle" });
+        if (i) el("path", { d: `M${x - gap} 199 h${gap - 2}`, stroke: "var(--ink-2)", "stroke-width": 1.2, "marker-end": "" }, sc.chain);
+      });
+      if (!chain.length) txt(sc.chain, 270, 230, "no chain: the display shows raw ADC samples", { "text-anchor": "middle", fill: "var(--critical)" });
+      sc.cost.textContent = `cost ${fx(cost, 2)} / ${scene.budget} per ADC sample`;
+    }
+    // instruments: the newest capture so far
+    const sv = latestStep((st) => st.viz && st.viz.scope);
+    if (sv !== sc.lastScope) {
+      sc.lastScope = sv;
+      if (sv) {
+        const ys = sv.viz.scope.y, lo = Math.min(...ys), hi = Math.max(...ys), pad = (hi - lo) * 0.1 || 0.01;
+        sc.scope.path.setAttribute("d", ys.map((v, i) => `${i ? "L" : "M"}${(SCOPE.x + (i / Math.max(1, ys.length - 1)) * SCOPE.w).toFixed(1)} ${(SCOPE.y + SCOPE.h - ((v - lo + pad) / (hi - lo + 2 * pad)) * SCOPE.h).toFixed(1)}`).join(""));
+        sc.scope.label.textContent = `${sv.viz.scope.source}, ${(sv.viz.scope.dt_ms * ys.length).toFixed(0)} ms, ${lo.toFixed(2)}..${hi.toFixed(2)} kg`;
+      } else {
+        sc.scope.path.setAttribute("d", "");
+        sc.scope.label.textContent = "no capture yet";
+      }
+    }
+    const pv = latestStep((st) => st.viz && st.viz.spectrum);
+    if (pv !== sc.lastSpec) {
+      sc.lastSpec = pv;
+      if (pv) {
+        const { f_hz: f, db, source } = pv.viz.spectrum;
+        const fmin = Math.max(f[0], 0.1), fmax = f[f.length - 1], top = Math.max(...db) + 5, bottom = top - 110;
+        const X = (v) => SPEC.x + (Math.log(Math.max(v, fmin) / fmin) / Math.log(fmax / fmin)) * SPEC.w;
+        const Y = (d) => SPEC.y + SPEC.h * Math.min(1, Math.max(0, (top - d) / (top - bottom)));
+        sc.spec.path.setAttribute("d", f.map((v, i) => `${i ? "L" : "M"}${X(v).toFixed(1)} ${Y(db[i]).toFixed(1)}`).join(""));
+        sc.spec.label.textContent = `${source}, ${fmin.toFixed(2)}..${fmax.toFixed(0)} Hz (log), ${pv.result.window} x${pv.result.averages}`;
+      } else {
+        sc.spec.path.setAttribute("d", "");
+        sc.spec.label.textContent = "no spectrum yet";
+      }
+    }
+  },
+};
+
+const SCENES = { tank: tankScene, scale: scaleScene };
 
 function buildScene() {
   const svg = $("scene");
   svg.innerHTML = "";
-  const g = S.ep.view.geometry;
-  const span = g.span_m;
-  const sc = {};
-  // signal lines (instrument dashes)
-  el("path", { d: `M420 216 V384 H60 V330`, fill: "none", stroke: "var(--signal)", "stroke-width": 1.2, "stroke-dasharray": "5 4" }, svg);
-  el("path", { d: `M60 130 V24 H98`, fill: "none", stroke: "var(--signal)", "stroke-width": 1.2, "stroke-dasharray": "5 4" }, svg);
-  // inlet pipe
-  el("line", { x1: 0, y1: 52, x2: TANK.x + 4, y2: 52, stroke: "var(--pipe)", "stroke-width": 11, "stroke-linecap": "butt" }, svg);
-  sc.inFlow = el("line", { x1: 0, y1: 52, x2: TANK.x + 4, y2: 52, stroke: "var(--flow)", "stroke-width": 3, "stroke-dasharray": "7 9" }, svg);
-  // outlet pipe
-  el("line", { x1: TANK.x + TANK.w - 4, y1: 346, x2: 540, y2: 346, stroke: "var(--pipe)", "stroke-width": 11 }, svg);
-  sc.outFlow = el("line", { x1: TANK.x + TANK.w - 4, y1: 346, x2: 540, y2: 346, stroke: "var(--flow)", "stroke-width": 3, "stroke-dasharray": "7 9" }, svg);
-  // tank
-  el("rect", { x: TANK.x, y: TANK.top, width: TANK.w, height: TANK.bottom - TANK.top, rx: 6, fill: "var(--steel-fill)" }, svg);
-  sc.water = el("rect", { x: TANK.x + 2, width: TANK.w - 4, fill: "var(--water)", opacity: 0.85 }, svg);
-  sc.surface = el("line", { x1: TANK.x + 2, x2: TANK.x + TANK.w - 2, stroke: "var(--water-top)", "stroke-width": 3 }, svg);
-  sc.stream = el("rect", { x: TANK.x + 3, width: 6, y: 57, fill: "var(--water)", opacity: 0.7 }, svg);
-  sc.band = el("rect", { x: TANK.x + 2, width: TANK.w - 4, fill: "var(--ink)", opacity: 0.1 }, svg);
-  sc.sp = el("line", { x1: TANK.x - 6, x2: TANK.x + TANK.w + 6, stroke: "var(--ink)", "stroke-width": 1.5, "stroke-dasharray": "6 4" }, svg);
-  sc.spLabel = el("text", { x: TANK.x + TANK.w + 10, "text-anchor": "start", class: "tag" }, svg);
-  for (const [m, label] of [[g.hh_m, "HH"], [g.ll_m, "LL"]]) {
-    el("line", { x1: TANK.x, x2: TANK.x + TANK.w, y1: ym(m, span), y2: ym(m, span), stroke: "var(--critical)", "stroke-width": 1.2, "stroke-dasharray": "3 3" }, svg);
-    el("text", { x: TANK.x + TANK.w + 10, y: ym(m, span) + 4 }, svg).textContent = `${label} ${m.toFixed(2)} m`;
-  }
-  sc.shell = el("rect", { x: TANK.x, y: TANK.top, width: TANK.w, height: TANK.bottom - TANK.top, rx: 6, fill: "none", stroke: "var(--steel)", "stroke-width": 3 }, svg);
-  for (let m = 0; m <= span + 1e-9; m += 0.5) {
-    el("line", { x1: TANK.x - 6, x2: TANK.x, y1: ym(m, span), y2: ym(m, span), stroke: "var(--steel)" }, svg);
-    el("text", { x: TANK.x - 9, y: ym(m, span) + 4, "text-anchor": "end" }, svg).textContent = m.toFixed(1);
-  }
-  sc.alarm = el("text", { x: TANK.x + TANK.w / 2, y: TANK.top + 22, "text-anchor": "middle", class: "tag", fill: "var(--critical)" }, svg);
-  sc.levelText = el("text", { x: TANK.x + TANK.w / 2, "text-anchor": "middle", class: "big" }, svg);
-  // control valve
-  el("polygon", { points: "96,40 124,64 124,40 96,64", fill: "var(--surface)", stroke: "var(--ink-2)", "stroke-width": 1.5, transform: "translate(0,0)" }, svg);
-  el("line", { x1: 110, y1: 52, x2: 110, y2: 30, stroke: "var(--ink-2)", "stroke-width": 1.5 }, svg);
-  el("path", { d: "M98 30 A12 12 0 0 1 122 30 Z", fill: "var(--surface)", stroke: "var(--ink-2)", "stroke-width": 1.5 }, svg);
-  el("text", { x: 130, y: 26, class: "tag" }, svg).textContent = "FV-101";
-  sc.valveText = el("text", { x: 110, y: 82, "text-anchor": "middle" }, svg);
-  sc.valveBar = el("rect", { x: 86, y: 88, height: 4, rx: 2, fill: "var(--output)" }, svg);
-  el("rect", { x: 86, y: 88, width: 48, height: 4, rx: 2, fill: "none", stroke: "var(--axis)" }, svg);
-  // outlet demand valve
-  el("polygon", { points: "441,334 469,358 469,334 441,358", fill: "var(--surface)", stroke: "var(--ink-2)", "stroke-width": 1.5 }, svg);
-  el("line", { x1: 455, y1: 346, x2: 455, y2: 324, stroke: "var(--ink-2)", "stroke-width": 1.5 }, svg);
-  el("line", { x1: 446, y1: 324, x2: 464, y2: 324, stroke: "var(--ink-2)", "stroke-width": 2 }, svg);
-  el("text", { x: 455, y: 316, "text-anchor": "middle", class: "tag" }, svg).textContent = "demand";
-  sc.demandText = el("text", { x: 455, y: 376, "text-anchor": "middle" }, svg);
-  // level transmitter
-  el("line", { x1: TANK.x + TANK.w, y1: 200, x2: 404, y2: 200, stroke: "var(--steel)", "stroke-width": 2 }, svg);
-  el("circle", { cx: 420, cy: 200, r: 16, fill: "var(--surface)", stroke: "var(--ink-2)", "stroke-width": 1.5 }, svg);
-  el("text", { x: 420, y: 204, "text-anchor": "middle", class: "tag" }, svg).textContent = "LT";
-  sc.ltText = el("text", { x: 442, y: 204 }, svg);
-  // controller faceplate
-  el("rect", { x: 10, y: 130, width: 150, height: 200, rx: 8, fill: "var(--surface)", stroke: "var(--ink-2)", "stroke-width": 1.2 }, svg);
-  el("text", { x: 20, y: 150, class: "tag" }, svg).textContent = "LIC-101";
-  sc.modeBg = el("rect", { x: 100, y: 138, width: 52, height: 17, rx: 4 }, svg);
-  sc.mode = el("text", { x: 126, y: 151, "text-anchor": "middle", class: "tag" }, svg);
-  const rows = ["SP", "PV", "OUT", "Kc", "Ti", "Td", "PV filter", "anti-windup"];
-  sc.fp = {};
-  rows.forEach((r, i) => {
-    el("text", { x: 20, y: 176 + i * 19 }, svg).textContent = r;
-    sc.fp[r] = el("text", { x: 150, y: 176 + i * 19, "text-anchor": "end", fill: "var(--ink)" }, svg);
-  });
-  S.scene = sc;
+  S.kind = S.ep.view.kind;
+  S.scene = SCENES[S.kind].build(svg, S.ep.view.scene);
 }
 
-function tuningAt(T) {
-  // The tuning in force at story time T: the last set_tuning call before it (commissioning),
-  // or the final tuning during the acceptance test.
-  const v = S.ep.view;
-  const { p } = phaseAt(T);
-  if (p.key === "acceptance") return v.commissioning.tuning;
-  let tuning = null;
-  for (const s of S.ep.steps) {
-    if (s.kind !== "tool" || s.sim_t0 > T) continue;
-    if (s.result && s.result.tuning) tuning = s.result.tuning;
-  }
-  return tuning || (S.ep.steps.find((s) => s.result && s.result.tuning) || {}).result?.tuning || null;
-}
-
-let dashIn = 0, dashOut = 0;
 function drawScene(T, dt) {
-  const sc = S.scene, g = S.ep.view.geometry, span = g.span_m;
   const { p, t } = phaseAt(T);
-  const r = rowAt(p.rows, t);
-  const h = r[COL.level], valve = r[COL.valve], out = r[COL.out], outlet = r[COL.outlet], sp = r[COL.sp], meas = r[COL.meas];
-  const y = ym(h, span);
-  sc.water.setAttribute("y", y);
-  sc.water.setAttribute("height", Math.max(0, TANK.bottom - 2 - y));
-  sc.surface.setAttribute("y1", y); sc.surface.setAttribute("y2", y);
-  sc.levelText.setAttribute("y", Math.min(TANK.bottom - 12, Math.max(TANK.top + 40, y + 24)));
-  sc.levelText.textContent = `${h.toFixed(3)} m`;
-  const qIn = Math.max(0, valve) / 100, qOut = (outlet / 100) * Math.sqrt(Math.max(0, h) / 1.2) * 1.1;
-  sc.stream.setAttribute("height", Math.max(0, y - 57));
-  sc.stream.setAttribute("opacity", qIn > 0.005 ? 0.25 + 0.6 * Math.min(1, qIn) : 0);
-  sc.stream.setAttribute("width", 2 + 7 * Math.min(1, qIn));
-  dashIn -= dt * 60 * qIn; dashOut -= dt * 60 * qOut;
-  sc.inFlow.setAttribute("stroke-dashoffset", dashIn);
-  sc.inFlow.setAttribute("opacity", qIn > 0.005 ? 0.9 : 0.15);
-  sc.outFlow.setAttribute("stroke-dashoffset", dashOut);
-  if (isNum(sp)) {
-    for (const e of [sc.sp, sc.spLabel, sc.band]) e.removeAttribute("visibility");
-    sc.sp.setAttribute("y1", ym(sp, span)); sc.sp.setAttribute("y2", ym(sp, span));
-    sc.spLabel.setAttribute("y", ym(sp, span) - 6);
-    sc.spLabel.textContent = `SP ${sp.toFixed(2)} m`;
-    sc.band.setAttribute("y", ym(sp + g.band_m, span));
-    sc.band.setAttribute("height", ym(sp - g.band_m, span) - ym(sp + g.band_m, span));
-  } else {
-    for (const e of [sc.sp, sc.spLabel, sc.band]) e.setAttribute("visibility", "hidden");
-  }
-  const alarm = h >= g.hh_m ? "HIGH-HIGH: tank spills" : h <= g.ll_m ? "LOW-LOW: pump runs dry" : "";
-  sc.alarm.textContent = alarm;
-  sc.shell.setAttribute("stroke", alarm ? "var(--critical)" : "var(--steel)");
-  sc.valveText.textContent = `valve ${valve.toFixed(1)} %`;
-  sc.valveBar.setAttribute("width", (48 * Math.min(100, Math.max(0, valve))) / 100);
-  sc.demandText.textContent = `${outlet.toFixed(0)} %`;
-  sc.ltText.textContent = `${meas.toFixed(3)} m`;
-  const auto = isNum(sp);
-  sc.mode.textContent = auto ? "AUTO" : "MAN";
-  sc.modeBg.setAttribute("fill", auto ? "var(--good-wash)" : "var(--warn-wash)");
-  sc.mode.setAttribute("fill", auto ? "var(--good-ink)" : "var(--warn-ink)");
-  const tu = tuningAt(T) || {};
-  const f = sc.fp;
-  f.SP.textContent = auto ? `${sp.toFixed(2)} m` : "–";
-  f.PV.textContent = `${meas.toFixed(3)} m`;
-  f.OUT.textContent = `${out.toFixed(1)} %`;
-  f.Kc.textContent = fx(tu.kc, 3);
-  f.Ti.textContent = isNum(tu.ti_s) ? (tu.ti_s > 0 ? `${tu.ti_s.toFixed(1)} s` : "off") : "–";
-  f.Td.textContent = isNum(tu.td_s) ? `${tu.td_s.toFixed(1)} s` : "–";
-  f["PV filter"].textContent = isNum(tu.pv_filter_s) ? `${tu.pv_filter_s.toFixed(1)} s` : "–";
-  f["anti-windup"].textContent = tu.anti_windup == null ? "–" : tu.anti_windup ? "on" : "off";
+  SCENES[S.kind].draw(S.scene, S.ep.view.scene, rowAt(p.rows, t), p, dt);
 }
 
-// ---------- trend chart ----------
+// ---------- trend chart (generic, from view.panels) ----------
 
-const CH = { W: 1000, L: 54, R: 16, top1: 22, bot1: 262, top2: 300, bot2: 410, H: 440 };
+const CH = { W: 1000, L: 58, R: 16, top: 22, gap: 40, bottom: 30 };
 
 function niceStep(span, target) {
-  const steps = [10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200];
+  const steps = [0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200];
   return steps.find((s) => span / s <= target) || 7200;
 }
+const tickLabel = (v) => (Math.abs(v) >= 100 || Number.isInteger(v) ? String(v) : String(+v.toFixed(3)));
 
 function buildChart(p) {
-  const svg = $("trend");
-  svg.setAttribute("viewBox", `0 0 ${CH.W} ${CH.H}`);
+  const svg = $("trend"), v = S.ep.view, panels = v.panels;
+  const units = panels.reduce((a, q) => a + (q.height || 1), 0);
+  const plotH = 110 * units;
+  const H = CH.top + plotH + CH.gap * (panels.length - 1) + CH.bottom;
+  svg.setAttribute("viewBox", `0 0 ${CH.W} ${H}`);
   svg.innerHTML = "";
-  const g = S.ep.view.geometry;
   const xs = (t) => CH.L + (t / p.dur) * (CH.W - CH.L - CH.R);
-  const y1 = (m) => CH.bot1 - (m / g.span_m) * (CH.bot1 - CH.top1);
-  const y2 = (pct) => CH.bot2 - (pct / 100) * (CH.bot2 - CH.top2);
   const grid = el("g", {}, svg);
-  for (const m of [0, 0.5, 1, 1.5, 2]) {
-    el("line", { x1: CH.L, x2: CH.W - CH.R, y1: y1(m), y2: y1(m), stroke: "var(--grid)" }, grid);
-    el("text", { x: CH.L - 8, y: y1(m) + 4, "text-anchor": "end" }, grid).textContent = `${m.toFixed(1)} m`;
+  const clip = el("clipPath", { id: "reveal" }, el("defs", {}, svg));
+  const clipRect = el("rect", { x: 0, y: 0, height: H, width: CH.L }, clip);
+  const data = el("g", { "clip-path": "url(#reveal)" }, svg);
+  const rows = p.rows, stride = Math.max(1, Math.floor(rows.length / 2500));
+  let y0 = CH.top;
+  const boxes = [];
+  for (const q of panels) {
+    const h = 110 * (q.height || 1), [lo, hi] = q.range;
+    const Y = (val) => y0 + h - ((Math.min(hi, Math.max(lo, val)) - lo) / (hi - lo)) * h;
+    txt(grid, CH.L, y0 - 8, q.title, { class: "title" });
+    for (const tk of q.ticks || [lo, hi]) {
+      el("line", { x1: CH.L, x2: CH.W - CH.R, y1: Y(tk), y2: Y(tk), stroke: "var(--grid)" }, grid);
+      txt(grid, CH.L - 8, Y(tk) + 4, `${tickLabel(tk)} ${q.unit}`, { "text-anchor": "end" });
+    }
+    const bands = (q.bands && (q.bands[p.key] || q.bands["*"])) || [];
+    for (const b of bands) el("rect", { x: CH.L, width: CH.W - CH.L - CH.R, y: Y(b.hi), height: Y(b.lo) - Y(b.hi), fill: "var(--band)" }, grid);
+    for (const l of q.hlines || []) el("line", { x1: CH.L, x2: CH.W - CH.R, y1: Y(l.y), y2: Y(l.y), stroke: COLORS[l.color] || "var(--axis)", "stroke-dasharray": "3 3", "stroke-width": 1.2 }, grid);
+    for (const s of q.series) {
+      let d = "", pen = false;
+      for (let i = 0; i < rows.length; i += stride) {
+        const val = rows[i][s.col];
+        if (!isNum(val)) { pen = false; continue; }
+        d += `${pen ? "L" : "M"}${xs(rows[i][0]).toFixed(1)} ${Y(val).toFixed(1)}`;
+        pen = true;
+      }
+      el("path", { d, fill: "none", stroke: COLORS[s.color] || "var(--curve)", "stroke-width": s.width || 1.5, ...(s.dash ? { "stroke-dasharray": "6 4" } : {}) }, data);
+    }
+    boxes.push({ q, y0, h });
+    y0 += h + CH.gap;
   }
-  for (const pct of [0, 50, 100]) {
-    el("line", { x1: CH.L, x2: CH.W - CH.R, y1: y2(pct), y2: y2(pct), stroke: "var(--grid)" }, grid);
-    el("text", { x: CH.L - 8, y: y2(pct) + 4, "text-anchor": "end" }, grid).textContent = `${pct} %`;
-  }
+  const yTop = CH.top, yBot = y0 - CH.gap;
   const step = niceStep(p.dur, 8);
   for (let t = 0; t <= p.dur + 1e-9; t += step) {
-    el("line", { x1: xs(t), x2: xs(t), y1: CH.bot2, y2: CH.bot2 + 5, stroke: "var(--axis)" }, grid);
-    el("text", { x: xs(t), y: CH.bot2 + 18, "text-anchor": "middle" }, grid).textContent = clock(t);
+    el("line", { x1: xs(t), x2: xs(t), y1: yBot, y2: yBot + 5, stroke: "var(--axis)" }, grid);
+    txt(grid, xs(t), yBot + 18, clock(t), { "text-anchor": "middle" });
   }
-  el("text", { x: CH.L, y: 13, class: "title" }, grid).textContent = "Level";
-  el("text", { x: CH.L, y: CH.top2 - 9, class: "title" }, grid).textContent = "Controller output and outlet demand";
-  for (const m of [g.hh_m, g.ll_m]) {
-    el("line", { x1: CH.L, x2: CH.W - CH.R, y1: y1(m), y2: y1(m), stroke: "var(--critical)", "stroke-dasharray": "3 3", "stroke-width": 1.2 }, grid);
+  for (const e of p.events || []) {
+    el("line", { x1: xs(e.t_s), x2: xs(e.t_s), y1: yTop, y2: yBot, stroke: "var(--ink-2)", "stroke-width": 1 }, grid);
+    txt(grid, xs(e.t_s) + 4, yTop + 10, e.label);
   }
-  // acceptance: band, events and limits
-  const lim = S.ep.view.limits || {};
-  if (p.key === "acceptance") {
-    el("rect", { x: CH.L, width: CH.W - CH.L - CH.R, y: y1(g.setpoint_m + g.band_m), height: y1(g.setpoint_m - g.band_m) - y1(g.setpoint_m + g.band_m), fill: "var(--band)" }, grid);
-    for (const e of p.events) {
-      el("line", { x1: xs(e.t_s), x2: xs(e.t_s), y1: CH.top1, y2: CH.bot2, stroke: "var(--ink-2)", "stroke-width": 1 }, grid);
-      el("text", { x: xs(e.t_s) + 4, y: CH.top1 + 10 }, grid).textContent = e.label;
-    }
-    const marks = [];
-    if (p.events[0] && isNum(lim.start_s)) marks.push([p.events[0].t_s + lim.start_s, "start limit"]);
-    for (const e of p.events.slice(1)) if (isNum(lim.recovery_s)) marks.push([e.t_s + lim.recovery_s, "recovery limit"]);
-    for (const [t, label] of marks) {
-      if (t > p.dur) continue;
-      el("line", { x1: xs(t), x2: xs(t), y1: CH.top1 + 16, y2: CH.bot1, stroke: "var(--critical)", "stroke-dasharray": "2 3", "stroke-width": 1 }, grid);
-      el("text", { x: xs(t) + 3, y: CH.bot1 - 6, fill: "var(--critical)" }, grid).textContent = label;
-    }
+  for (const m of p.marks || []) {
+    if (m.t_s > p.dur) continue;
+    el("line", { x1: xs(m.t_s), x2: xs(m.t_s), y1: yTop + 16, y2: yBot, stroke: "var(--critical)", "stroke-dasharray": "2 3", "stroke-width": 1 }, grid);
+    txt(grid, xs(m.t_s) + 3, boxes[0].y0 + boxes[0].h - 6, m.label, { fill: "var(--critical)" });
   }
-  const clip = el("clipPath", { id: "reveal" }, el("defs", {}, svg));
-  const clipRect = el("rect", { x: 0, y: 0, height: CH.H, width: CH.L }, clip);
-  const data = el("g", { "clip-path": "url(#reveal)" }, svg);
-  const rows = p.rows;
-  const stride = Math.max(1, Math.floor(rows.length / 2500));
-  const path = (fy, col, from = 0) => {
-    let d = "", pen = false;
-    for (let i = from; i < rows.length; i += stride) {
-      const v = rows[i][col];
-      if (!isNum(v)) { pen = false; continue; }
-      d += `${pen ? "L" : "M"}${xs(rows[i][0]).toFixed(1)} ${fy(v).toFixed(1)}`;
-      pen = true;
-    }
-    return d;
-  };
-  el("path", { d: path(y1, COL.meas), fill: "none", stroke: "var(--measured)", "stroke-width": 1 }, data);
-  el("path", { d: path(y1, COL.sp), fill: "none", stroke: "var(--ink)", "stroke-width": 1.4, "stroke-dasharray": "6 4" }, data);
-  el("path", { d: path(y1, COL.level), fill: "none", stroke: "var(--curve)", "stroke-width": 2 }, data);
-  el("path", { d: path(y2, COL.outlet), fill: "none", stroke: "var(--demand)", "stroke-width": 1.5, "stroke-dasharray": "5 4" }, data);
-  el("path", { d: path(y2, COL.out), fill: "none", stroke: "var(--output)", "stroke-width": 1.5 }, data);
-  const cursor = el("line", { y1: CH.top1, y2: CH.bot2, stroke: "var(--ink)", "stroke-width": 1, opacity: 0.6 }, svg);
-  const hover = el("line", { y1: CH.top1, y2: CH.bot2, stroke: "var(--ink-2)", "stroke-width": 1, "stroke-dasharray": "2 2", visibility: "hidden" }, svg);
+  const cursor = el("line", { y1: yTop, y2: yBot, stroke: "var(--ink)", "stroke-width": 1, opacity: 0.6 }, svg);
+  const hover = el("line", { y1: yTop, y2: yBot, stroke: "var(--ink-2)", "stroke-width": 1, "stroke-dasharray": "2 2", visibility: "hidden" }, svg);
   S.chart = { p, xs, clipRect, cursor, hover };
-  $("chart-title").textContent = p.key === "acceptance" ? "Acceptance test" : "Commissioning";
-  $("legend").innerHTML = [
-    ["var(--curve)", "", "level (true)"], ["var(--measured)", "", "measured"], ["var(--ink)", "dash", "setpoint"],
-    ...(p.key === "acceptance" ? [["var(--band)", "box", "±3 cm band"]] : []),
-    ["var(--output)", "", "controller output"], ["var(--demand)", "dash", "outlet demand"], ["var(--critical)", "dash", "alarm limits"],
-  ].map(([c, k, label]) => `<span><i class="${k}" style="${k === "box" ? "background" : "border-color"}:${c}"></i>${label}</span>`).join("");
-  S.chartPhase = p.key;
+  $("chart-title").textContent = p.name;
+  const seen = new Set(), legend = [];
+  for (const q of panels) {
+    for (const s of q.series) if (!seen.has(s.label)) { seen.add(s.label); legend.push([COLORS[s.color], s.dash ? "dash" : "", s.label]); }
+    for (const b of (q.bands && (q.bands[p.key] || q.bands["*"])) || []) if (b.label && !seen.has(b.label)) { seen.add(b.label); legend.push(["var(--band)", "box", b.label]); }
+    for (const l of q.hlines || []) if (l.label && !seen.has(l.label)) { seen.add(l.label); legend.push([COLORS[l.color], "dash", l.label]); }
+  }
+  $("legend").innerHTML = legend.map(([c, k, label]) => `<span><i class="${k}" style="${k === "box" ? "background" : "border-color"}:${c}"></i>${esc(label)}</span>`).join("");
 }
 
 function drawChart(T) {
   const { p, t } = phaseAt(T);
-  if (S.chartPhase !== p.key || S.chart.p !== p) buildChart(p);
+  if (!S.chart || S.chart.p !== p) buildChart(p);
   const x = S.chart.xs(t);
   S.chart.clipRect.setAttribute("width", x);
   S.chart.cursor.setAttribute("x1", x); S.chart.cursor.setAttribute("x2", x);
 }
 
 function chartHover(ev) {
-  const svg = $("trend"), box = svg.getBoundingClientRect(), c = S.chart;
+  const c = S.chart;
   if (!c) return;
+  const box = $("trend").getBoundingClientRect();
   const x = ((ev.clientX - box.left) / box.width) * CH.W;
-  const tMax = Math.max(0, S.T - c.p.t0);
-  const t = Math.min(tMax, Math.max(0, ((x - CH.L) / (CH.W - CH.L - CH.R)) * c.p.dur));
   if (x < CH.L || x > CH.W - CH.R) return chartLeave();
+  const t = Math.min(Math.max(0, S.T - c.p.t0), Math.max(0, ((x - CH.L) / (CH.W - CH.L - CH.R)) * c.p.dur));
   const r = rowAt(c.p.rows, t);
   c.hover.setAttribute("x1", c.xs(t)); c.hover.setAttribute("x2", c.xs(t)); c.hover.removeAttribute("visibility");
+  const parts = [`t ${clock(t)}`];
+  for (const q of S.ep.view.panels) for (const s of q.series) if (isNum(r[s.col])) parts.push(`${s.label} ${+r[s.col].toFixed(4)} ${q.unit}`);
   const ro = $("readout");
-  ro.innerHTML = `t ${clock(t)}<br>level ${fx(r[1], 3)} m · measured ${fx(r[2], 3)} m${isNum(r[6]) ? ` · SP ${fx(r[6], 2)} m` : ""}<br>output ${fx(r[3], 1)} % · demand ${fx(r[5], 0)} %`;
+  ro.innerHTML = parts.map(esc).join("<br>");
   ro.hidden = false;
   const host = $("trend").parentElement.getBoundingClientRect();
-  const left = ev.clientX - host.left + 14;
-  ro.style.left = `${Math.min(left, host.width - ro.offsetWidth - 8)}px`;
+  ro.style.left = `${Math.min(ev.clientX - host.left + 14, host.width - ro.offsetWidth - 8)}px`;
   ro.style.top = `${ev.clientY - host.top + 14}px`;
 }
 function chartLeave() {
@@ -331,28 +457,7 @@ function chartLeave() {
 // ---------- log ----------
 
 function argText(args) {
-  return Object.entries(args || {}).map(([k, v]) => `${k}=${typeof v === "string" ? JSON.stringify(v) : v}`).join(", ");
-}
-
-function resultText(s) {
-  const r = s.result || {};
-  if (s.error) return `<div class="res err">refused: ${esc(s.error)}</div>`;
-  const tu = r.tuning || {};
-  switch (s.name) {
-    case "set_manual": return `<div class="res">manual, valve ${fx(r.output_pct, 1)} %</div>`;
-    case "set_auto": return `<div class="res">automatic, setpoint ${fx(r.setpoint_m, 2)} m</div>`;
-    case "set_outlet_demand": return `<div class="res">outlet demand ${fx(r.outlet_pct, 0)} %</div>`;
-    case "set_tuning":
-      return `<div class="res">Kc ${fx(tu.kc, 3)} · Ti ${tu.ti_s > 0 ? fx(tu.ti_s, 1) + " s" : "off"} · Td ${fx(tu.td_s, 1)} s · filter ${fx(tu.pv_filter_s, 1)} s · anti-windup ${tu.anti_windup ? "on" : "off"}</div>`;
-    case "wait": {
-      const rows = (r.trend && r.trend.rows) || [];
-      const lv = rows.map((x) => x[1]);
-      const alarms = (r.alarms || []).map((a) => `<div class="res err">${esc(a.alarm)} alarm at ${clock(a.t_s)} (${fx(a.level_m, 3)} m)</div>`).join("");
-      return `<div class="res">plant ran ${dur(s.sim_t1 - s.sim_t0)}: level ${fx(lv[0], 3)} → ${fx(lv[lv.length - 1], 3)} m (min ${fx(Math.min(...lv), 3)}, max ${fx(Math.max(...lv), 3)}), output ${fx(r.output_pct, 1)} %, ${rows.length} trend rows returned</div>${alarms}`;
-    }
-    case "submit": return `<div class="res">handed over for the acceptance test</div>`;
-    default: return "";
-  }
+  return Object.entries(args || {}).map(([k, v]) => `${k}=${typeof v === "object" ? JSON.stringify(v) : typeof v === "string" ? JSON.stringify(v) : v}`).join(", ");
 }
 
 function renderLog() {
@@ -369,16 +474,15 @@ function renderLog() {
       return `<li class="model" data-i="${i}"><div class="who"><b>${scripted ? "Scripted engineer" : "Model"}</b><span>plant ${clock(s.sim_t)}</span>${meta.map((m) => `<span>${esc(m)}</span>`).join("")}</div><div class="text">${esc((s.text || "").trim())}</div>${think}</li>`;
     }
     const data = s.result ? `<details><summary>Data returned to the model</summary><pre>${esc(JSON.stringify(s.result, null, 1))}</pre></details>` : "";
-    return `<li class="tool" data-i="${i}"><div class="call"><span class="fn">${esc(s.name)}</span>(${esc(argText(s.args))})</div>${resultText(s)}${s.name === "wait" || s.name === "submit" || s.error ? data : ""}</li>`;
+    return `<li class="tool" data-i="${i}"><div class="call"><span class="fn">${esc(s.name)}</span>(${esc(argText(s.args))})</div><div class="res${s.alert ? " err" : ""}">${esc(s.summary || s.error || "")}</div>${data}</li>`;
   }).join("");
   list.querySelectorAll("li").forEach((li) => li.addEventListener("click", (ev) => {
     if (ev.target.closest("details")) return;
     seekStep(+li.dataset.i);
   }));
-  const marks = $("marks");
-  marks.innerHTML = ep.steps.map((s) => {
+  $("marks").innerHTML = ep.steps.map((s) => {
     const left = (100 * anchorOf(s)) / (S.total || 1);
-    return `<span class="${s.kind === "model" ? "model" : s.error ? "err" : ""}" style="left:${left}%"></span>`;
+    return `<span class="${s.kind === "model" ? "model" : s.alert ? "err" : ""}" style="left:${left}%"></span>`;
   }).join("") + (S.phases[1] ? `<span class="phase" style="left:${(100 * S.phases[1].t0) / S.total}%"></span>` : "");
   S.logCount = ep.steps.length;
   markLog();
@@ -393,7 +497,8 @@ function markLog() {
     li.classList.toggle("future", i > S.cur);
     if (i === S.cur) current = li;
   });
-  if (current) {
+  if (current && current !== S.lastCurrent) {
+    S.lastCurrent = current;
     const top = current.offsetTop, bottom = top + current.offsetHeight;
     if (top < list.scrollTop || bottom > list.scrollTop + list.clientHeight) list.scrollTop = Math.max(0, top - 12);
   }
@@ -403,67 +508,47 @@ function markLog() {
 
 function renderHead() {
   const ep = S.ep, r = ep.result, u = ep.usage || {};
-  const name = ep.agent.kind === "scripted" ? `Scripted ${ep.agent.name} agent` : ep.agent.name;
-  $("ep-name").textContent = name;
-  const live = ep.status === "running";
-  const badge = live ? `<span class="badge live">live</span>` : r ? `<span class="badge ${r.passed ? "pass" : "fail"}">${r.passed ? "✓ passed" : "✗ failed"}</span>` : ep.error ? `<span class="badge fail">API error</span>` : "";
+  const scripted = ep.agent.kind === "scripted";
+  $("ep-name").textContent = scripted ? `Scripted ${ep.agent.name} agent` : ep.agent.name;
+  const badge = ep.status === "running" ? `<span class="badge live">live</span>`
+    : r ? `<span class="badge ${r.passed ? "pass" : "fail"}">${r.passed ? "✓ passed" : "✗ failed"}</span>`
+    : ep.error ? `<span class="badge fail">API error</span>` : "";
   const settings = ep.agent.settings ? Object.entries(ep.agent.settings).filter(([k, v]) => v != null && !(Array.isArray(v) && !v.length) && k !== "model").map(([k, v]) => `${k} ${v}`).join(", ") : "";
   $("ep-sub").innerHTML = `${esc(ep.env.title)} · seed ${ep.env.seed}${settings ? ` · ${esc(settings)}` : ""} ${badge}`;
-  const tools = ep.steps.filter((s) => s.kind === "tool").length;
   const stats = [
     ["Score", r ? r.score.toFixed(3) : "–"],
     ["Wall time", dur(ep.wall_s)],
-    ["Model time", ep.agent.kind === "scripted" ? "–" : dur(ep.model_s)],
-    ["Tool calls", tools],
-    ["Tokens", ep.agent.kind === "scripted" ? "–" : int((u.prompt_tokens || 0) + (u.completion_tokens || 0))],
-    ["Cost", ep.agent.kind === "scripted" ? "–" : usd(u.cost_usd)],
+    ["Model time", scripted ? "–" : dur(ep.model_s)],
+    ["Tool calls", ep.steps.filter((s) => s.kind === "tool").length],
+    ["Tokens", scripted ? "–" : int((u.prompt_tokens || 0) + (u.completion_tokens || 0))],
+    ["Cost", scripted ? "–" : usd(u.cost_usd)],
   ];
   $("ep-stats").innerHTML = stats.map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join("");
   $("prompt").textContent = ep.prompt;
 }
 
 function renderResult() {
-  const ep = S.ep, r = ep.result, box = $("result");
+  const ep = S.ep, r = ep.result, box = $("result"), res = ep.view.result;
   if (!r && !ep.error) { box.hidden = true; return; }
   box.hidden = false;
   if (ep.error) {
     box.innerHTML = `<h2>The run stopped on an API error</h2><p>${esc(ep.error)}</p><p>API errors are not counted against the model; this run has no score.</p>`;
     return;
   }
-  const m = r.metrics, lim = ep.view.limits;
-  const yes = (ok) => `<td class="${ok ? "ok" : "no"}">${ok ? "✓ met" : "✗ missed"}</td>`;
-  const rec = [m.recovery1_s, m.recovery2_s];
-  const recWorst = rec.some((v) => v == null) ? null : Math.max(...rec);
-  const rows = [
-    ["No alarm during the acceptance test", m.acceptance_alarm ? "alarm" : "none", "none", !m.acceptance_alarm],
-    ["Inside 1.20 ± 0.03 m after the switch to automatic", m.start_s == null ? "never" : `${m.start_s} s`, `${lim.start_s} s`, m.start_s != null && m.start_s <= lim.start_s],
-    ["Overshoot during the start", `${fx(m.overshoot_m, 3)} m`, `${fx(lim.overshoot_m, 3)} m`, m.overshoot_m <= lim.overshoot_m],
-    ["Back inside the band after each demand step (worst)", recWorst == null ? "never" : `${recWorst} s`, `${lim.recovery_s} s`, recWorst != null && recWorst <= lim.recovery_s],
-    ["Valve travel", `${int(m.travel_pct)} %`, `${int(lim.travel_pct)} %`, m.travel_pct <= lim.travel_pct],
-    ["Alarms while commissioning", String(m.commissioning_alarms), "0", m.commissioning_alarms === 0],
-  ];
-  const hp = ep.view.hidden_plant || {};
-  const ft = m.final_tuning || {}, rt = hp.reference_tuning || {};
-  const tuneRow = (label, k, d, unit = "") => `<dt>${label}</dt><dd>${fx(ft[k], d)}${unit} <span style="color:var(--muted)">(SIMC ${fx(rt[k], d)}${unit})</span></dd>`;
+  const reqs = (res && res.requirements) || [];
+  const fin = res && res.final;
   box.innerHTML = `
     <div class="verdict-line"><h2>Acceptance test</h2><span class="score">${r.score.toFixed(3)}</span>
       <span class="badge ${r.passed ? "pass" : "fail"}">${r.passed ? "✓ passed" : "✗ failed"}</span>
-      <span style="color:var(--ink-2)">${m.submitted ? "submitted by the agent" : "not submitted: " + esc(ep.stop_reason)}</span></div>
+      <span style="color:var(--ink-2)">${r.metrics.submitted ? "submitted by the agent" : "not submitted: " + esc(ep.stop_reason)}</span></div>
     <div class="scroll-x"><table>
       <thead><tr><th>Requirement</th><th class="num">Measured</th><th class="num">Limit</th><th></th></tr></thead>
-      <tbody>${rows.map(([a, b, c, ok]) => `<tr><td>${a}</td><td class="num">${esc(b)}</td><td class="num">${esc(c)}</td>${yes(ok)}</tr>`).join("")}</tbody>
+      <tbody>${reqs.map((q) => `<tr><td>${esc(q.label)}</td><td class="num">${esc(q.measured)}</td><td class="num">${esc(q.limit)}</td><td class="${q.ok ? "ok" : "no"}">${q.ok ? "✓ met" : "✗ missed"}</td></tr>`).join("")}</tbody>
     </table></div>
     <div class="reveal">
-      <div><h3>The hidden plant</h3><dl>
-        <dt>Time constant</dt><dd>${fx(hp.time_constant_s, 0)} s</dd>
-        <dt>Gain</dt><dd>${fx(hp.gain_pct_per_pct, 2)} %/%</dd>
-        <dt>Transmitter delay</dt><dd>${fx(hp.transmitter_delay_s, 1)} s</dd>
-        <dt>Valve lag</dt><dd>${fx(hp.valve_lag_s, 1)} s</dd>
-        <dt>Transmitter noise</dt><dd>${fx(1000 * hp.noise_m, 1)} mm</dd>
-        <dt>Tank area</dt><dd>${fx(hp.area_m2, 2)} m²</dd></dl></div>
-      <div><h3>Final tuning</h3><dl>
-        ${tuneRow("Kc", "kc", 2)}${tuneRow("Ti", "ti_s", 0, " s")}${tuneRow("Td", "td_s", 1, " s")}${tuneRow("PV filter", "pv_filter_s", 1, " s")}
-        <dt>Anti-windup</dt><dd>${ft.anti_windup ? "on" : "off"} <span style="color:var(--muted)">(SIMC on)</span></dd></dl></div>
+      <div><h3>What the agent could not see</h3><dl>${((res && res.hidden) || []).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl></div>
+      ${fin ? `<div><h3>${esc(fin.title)}</h3><div class="scroll-x"><table class="final"><thead><tr>${fin.columns.map((c) => `<th>${esc(c)}</th>`).join("")}</tr></thead>
+        <tbody>${fin.rows.map((row) => `<tr>${row.map((c, i) => `<td${i ? ' class="mono"' : ""}>${esc(c)}</td>`).join("")}</tr>`).join("")}</tbody></table></div></div>` : ""}
     </div>`;
 }
 
@@ -475,28 +560,22 @@ function setPlaying(on) {
   $("btn-play").setAttribute("aria-label", on ? "Pause" : "Play");
 }
 
-function holdMs(step) {
-  const n = (step.text || "").length;
-  return Math.min(5000, 1300 + 14 * n);
-}
+const holdMs = (step) => Math.min(5000, 1300 + 14 * (step.text || "").length);
 
-function seek(T, { resetNext = true } = {}) {
+function seek(T) {
   S.T = Math.max(0, Math.min(S.total, T));
   S.holdUntil = 0;
-  if (resetNext) {
-    const steps = S.ep.steps;
-    let i = 0;
-    while (i < steps.length && anchorOf(steps[i]) <= S.T + 1e-6) i++;
-    S.next = i;
-    S.cur = i - 1;
-  }
+  const steps = S.ep.steps;
+  let i = 0;
+  while (i < steps.length && anchorOf(steps[i]) <= S.T + 1e-6) i++;
+  S.next = i;
+  S.cur = i - 1;
   S.follow = S.T >= S.total - 1;
   render(0);
 }
 
 function seekStep(i) {
-  const s = S.ep.steps[i];
-  S.T = anchorOf(s);
+  S.T = anchorOf(S.ep.steps[i]);
   S.cur = i;
   S.next = i + 1;
   S.holdUntil = 0;
@@ -508,7 +587,7 @@ function render(dt) {
   drawScene(S.T, dt);
   drawChart(S.T);
   const { p, t } = phaseAt(S.T);
-  $("phase").textContent = p.key === "acceptance" ? "Acceptance test: the tuning the agent left, on a fresh start" : "Commissioning: the agent works on the plant";
+  $("phase").textContent = p.key === "acceptance" ? "Acceptance test: what the agent left, on a fresh start" : "Commissioning: the agent works on the plant";
   $("clock").textContent = `${p.name.toLowerCase()} ${clock(t)} / ${clock(p.dur)}`;
   $("scrub").value = String(Math.round((1000 * S.T) / (S.total || 1)));
   markLog();
@@ -552,13 +631,13 @@ function adopt(ep) {
   S.phases = buildPhases(ep);
   const last = S.phases[S.phases.length - 1];
   S.total = last ? last.t0 + last.dur : 0;
+  S.chart = null;
   if (first) {
     buildScene();
-    const speed = [5, 20, 60, 200].find((s) => S.total / s <= 120) || 200;
+    const speed = [1, 5, 20, 60, 200].find((s) => S.total / s <= 120) || 200;
     S.speed = speed;
     $("speed").value = String(speed);
   }
-  if (first || S.chartPhase) S.chartPhase = null;
   renderHead();
   if (first || S.logCount !== ep.steps.length) renderLog();
   renderResult();
@@ -596,16 +675,21 @@ async function showList() {
     grid.innerHTML = `<p class="notice">No runs published yet.</p>`;
     return;
   }
-  grid.innerHTML = index.episodes.map((e) => {
+  const byEnv = new Map();
+  for (const e of index.episodes) {
+    if (!byEnv.has(e.env.id)) byEnv.set(e.env.id, []);
+    byEnv.get(e.env.id).push(e);
+  }
+  grid.innerHTML = [...byEnv.values()].map((eps) => `<h2 class="env-head">${esc(eps[0].env.title)} <span class="chip">${esc(eps[0].env.id)}</span></h2>` + eps.map((e) => {
     const scripted = e.agent.kind === "scripted";
     const verdict = e.passed == null ? "" : `<span class="badge ${e.passed ? "pass" : "fail"}">${e.passed ? "✓ passed" : "✗ failed"} · ${fx(e.score, 3)}</span>`;
     return `<a class="ep-card" href="?ep=${encodeURIComponent(e.id)}">
-      <span class="meta">${esc(e.env.title)} · seed ${e.env.seed}</span>
+      <span class="meta">seed ${e.env.seed}</span>
       <span class="who">${scripted ? `Scripted ${esc(e.agent.name)} agent` : esc(e.agent.name)}</span>
       <span>${verdict}</span>
       <span class="nums"><span>${e.tool_calls} tool calls</span><span>wall ${dur(e.wall_s)}</span>${scripted ? "" : `<span>${usd(e.usage && e.usage.cost_usd)}</span>`}</span>
     </a>`;
-  }).join("");
+  }).join("")).join("");
 }
 
 function wire() {

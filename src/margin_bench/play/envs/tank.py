@@ -518,41 +518,136 @@ class TankLevel:
         score = scoring.combine(*ratios.values())
         return Score(score=score, passed=score >= 1.0, metrics=metrics)
 
+    def describe(self, name: str, args: dict[str, Any], result: dict[str, Any]) -> tuple[str, bool]:
+        """One line for the viewer's log, and whether it reports an alarm."""
+        tu = result.get("tuning") or {}
+        if name == "set_manual":
+            return f"manual, valve {result['output_pct']:.1f} %", False
+        if name == "set_auto":
+            return f"automatic, setpoint {result['setpoint_m']:.2f} m", False
+        if name == "set_outlet_demand":
+            return f"outlet demand {result['outlet_pct']:g} %", False
+        if name == "set_tuning":
+            ti = f"{tu['ti_s']:.1f} s" if tu["ti_s"] > 0 else "off"
+            return (f"Kc {tu['kc']:.3f} · Ti {ti} · Td {tu['td_s']:.1f} s · PV filter {tu['pv_filter_s']:.1f} s · "
+                    f"anti-windup {'on' if tu['anti_windup'] else 'off'}"), False
+        if name == "wait":
+            rows = result["trend"]["rows"]
+            lv = [r[1] for r in rows]
+            text = (f"plant ran to {result['t_s']:.0f} s: level {lv[0]:.3f} -> {lv[-1]:.3f} m (min {min(lv):.3f}, "
+                    f"max {max(lv):.3f}), output {result['output_pct']:.1f} %, {len(rows)} trend rows returned")
+            alarms = result.get("alarms") or []
+            for a in alarms:
+                text += f"; {a['alarm'].upper()} ALARM at {a['t_s']:.0f} s ({a['level_m']:.3f} m)"
+            return text, bool(alarms)
+        if name == "submit":
+            return "handed over for the acceptance test", False
+        return "", False
+
+    def visual(self, name: str, args: dict[str, Any], result: dict[str, Any]) -> dict[str, Any] | None:
+        return None
+
     def view(self) -> dict[str, Any]:
-        p = self.plant
-        out: dict[str, Any] = {
-            "kind": "tank",
-            "geometry": {"span_m": SPAN, "hh_m": HH, "ll_m": LL, "setpoint_m": SP, "band_m": BAND},
-            "commissioning": {
-                "columns": FRAME_COLUMNS,
-                "rows": self.sim.frames,
-                "alarms": self.sim.incidents,
-                "tuning": self.sim.pid.tuning.to_dict(),
-            },
-            "limits": self.limits,
-        }
+        lim = self.limits
+        phases: list[dict[str, Any]] = [
+            {"key": "commissioning", "name": "Commissioning", "rows": self.sim.frames, "events": [], "marks": []}
+        ]
         if self.result is not None:
             sc = self.scenario
-            out["acceptance"] = {
-                "columns": FRAME_COLUMNS,
+            phases.append({
+                "key": "acceptance",
+                "name": "Acceptance test",
                 "rows": self.result["frames"],
                 "events": [
                     {"t_s": T_AUTO, "label": f"auto, SP {SP:.2f} m"},
                     {"t_s": sc.t_step1, "label": f"demand {sc.outlet1:g} %"},
                     {"t_s": sc.t_step2, "label": f"demand {sc.outlet2:g} %"},
                 ],
-            }
-            q_nom = p.c_out * OUTLET_NOMINAL / 100.0 * math.sqrt(SP)
-            out["hidden_plant"] = {
-                "area_m2": round(p.area, 3),
-                "time_constant_s": round(2.0 * p.area * SP / q_nom, 1),
-                "gain_pct_per_pct": round(SP / (p.valve_for(SP, OUTLET_NOMINAL) / 100.0), 3),
-                "transmitter_delay_s": round(p.delay, 2),
-                "valve_lag_s": round(p.valve_lag, 2),
-                "noise_m": round(p.noise, 4),
-                "reference_tuning": simc_pi(p).to_dict(),
-            }
+                "marks": [
+                    {"t_s": T_AUTO + lim["start_s"], "label": "start limit"},
+                    {"t_s": sc.t_step1 + lim["recovery_s"], "label": "recovery limit"},
+                    {"t_s": sc.t_step2 + lim["recovery_s"], "label": "recovery limit"},
+                ],
+            })
+        out: dict[str, Any] = {
+            "kind": "tank",
+            "smooth": True,
+            "columns": FRAME_COLUMNS,
+            "phases": phases,
+            "scene": {"span_m": SPAN, "hh_m": HH, "ll_m": LL, "setpoint_m": SP, "band_m": BAND,
+                      "final_tuning": self.sim.pid.tuning.to_dict()},
+            "panels": [
+                {
+                    "title": "Level", "unit": "m", "range": [0.0, SPAN], "ticks": [0.0, 0.5, 1.0, 1.5, 2.0], "height": 2,
+                    "series": [
+                        {"col": 2, "label": "measured", "color": "measured", "width": 1},
+                        {"col": 6, "label": "setpoint", "color": "ink", "dash": True},
+                        {"col": 1, "label": "level (true)", "color": "curve", "width": 2},
+                    ],
+                    "hlines": [{"y": HH, "label": "alarm limits", "color": "critical"}, {"y": LL, "color": "critical"}],
+                    "bands": {"acceptance": [{"lo": SP - BAND, "hi": SP + BAND, "label": "±3 cm band"}]},
+                },
+                {
+                    "title": "Controller output and outlet demand", "unit": "%", "range": [0.0, 100.0],
+                    "ticks": [0.0, 50.0, 100.0], "height": 1,
+                    "series": [
+                        {"col": 5, "label": "outlet demand", "color": "demand", "dash": True},
+                        {"col": 3, "label": "controller output", "color": "output"},
+                    ],
+                },
+            ],
+        }
+        if self.result is not None:
+            out["result"] = self._result_view()
         return out
+
+    def _result_view(self) -> dict[str, Any]:
+        r, lim, p = self.result, self.limits, self.plant
+        rec = max(r["recovery1_s"], r["recovery2_s"])
+        alarms = len(self.sim.incidents)
+        reqs = [
+            ("No alarm during the acceptance test", "alarm" if r["alarm"] else "none", "none", not r["alarm"]),
+            ("Inside 1.20 ± 0.03 m after the switch to automatic", _secs(r["start_s"]), f"{lim['start_s']:g} s",
+             r["start_s"] <= lim["start_s"]),
+            ("Overshoot during the start", f"{r['overshoot_m']:.3f} m", f"{lim['overshoot_m']:.3f} m",
+             r["overshoot_m"] <= lim["overshoot_m"]),
+            ("Back inside the band after each demand step (worst)", _secs(rec), f"{lim['recovery_s']:g} s",
+             rec <= lim["recovery_s"]),
+            ("Valve travel", f"{r['travel_pct']:,.0f} %", f"{lim['travel_pct']:,.0f} %", r["travel_pct"] <= lim["travel_pct"]),
+            ("Alarms while commissioning", str(alarms), "0", alarms == 0),
+        ]
+        q_nom = p.c_out * OUTLET_NOMINAL / 100.0 * math.sqrt(SP)
+        ft, rt = self.sim.pid.tuning, simc_pi(p)
+
+        def ti(x: float) -> str:
+            return f"{x:.0f} s" if x > 0 else "off"
+
+        return {
+            "requirements": [{"label": a, "measured": b, "limit": c, "ok": bool(d)} for a, b, c, d in reqs],
+            "hidden": [
+                ["Time constant", f"{2.0 * p.area * SP / q_nom:.0f} s"],
+                ["Gain", f"{SP / (p.valve_for(SP, OUTLET_NOMINAL) / 100.0):.2f} %/%"],
+                ["Transmitter delay", f"{p.delay:.1f} s"],
+                ["Valve lag", f"{p.valve_lag:.1f} s"],
+                ["Transmitter noise", f"{1000 * p.noise:.1f} mm"],
+                ["Tank area", f"{p.area:.2f} m²"],
+            ],
+            "final": {
+                "title": "Final tuning",
+                "columns": ["", "agent", "SIMC reference"],
+                "rows": [
+                    ["Kc", f"{ft.kc:.2f}", f"{rt.kc:.2f}"],
+                    ["Ti", ti(ft.ti_s), ti(rt.ti_s)],
+                    ["Td", f"{ft.td_s:.1f} s", f"{rt.td_s:.1f} s"],
+                    ["PV filter", f"{ft.pv_filter_s:.1f} s", f"{rt.pv_filter_s:.1f} s"],
+                    ["Anti-windup", "on" if ft.anti_windup else "off", "on"],
+                ],
+            },
+        }
+
+
+def _secs(v: float) -> str:
+    return "never" if math.isinf(v) else f"{v:g} s"
 
 
 def _num(args: dict[str, Any], key: str, lo: float, hi: float) -> float:

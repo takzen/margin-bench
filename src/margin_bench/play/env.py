@@ -61,6 +61,21 @@ class Environment(Protocol):
         """Run the acceptance test with the plant as the model left it and grade it."""
         ...
 
+    def describe(self, name: str, args: dict[str, Any], result: dict[str, Any]) -> tuple[str, bool]:
+        """A one-line summary of a tool call for the viewer, and whether it reports an alarm."""
+        ...
+
+    def visual(self, name: str, args: dict[str, Any], result: dict[str, Any]) -> dict[str, Any] | None:
+        """Extra data the viewer shows for a tool call (a spectrum, a scope trace). Never sent to the model."""
+        ...
+
     def view(self) -> dict[str, Any]:
-        """Everything the viewer needs to animate the episode so far."""
+        """Everything the viewer needs to animate the episode so far.
+
+        Keys: kind (which scene to draw), columns (frame columns), phases (each with
+        key, name, rows, events, marks), panels (the trend chart: title, unit,
+        range, ticks, height, series by column, hlines, bands per phase), scene
+        (static data for the scene), and result once the acceptance test has run
+        (requirements, hidden plant values, a final settings table).
+        """
         ...

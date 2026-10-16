@@ -14,36 +14,53 @@ from margin_bench.play.env import ToolError
 from margin_bench.play.episode import Episode
 
 ENV = "process.tank_level"
+ENVS = sorted(SCRIPTED)
 SEEDS = range(20)
 
 
-def _scripted(name: str, seed: int) -> Episode:
-    env = make(ENV, seed)
+def _scripted(name: str, seed: int, env_id: str = ENV) -> Episode:
+    env = make(env_id, seed)
     ep = Episode(env, {"kind": "scripted", "name": name})
-    SCRIPTED[ENV][name](ep)
+    SCRIPTED[env_id][name](ep)
     ep.finish(env.finish(), stop_reason="submitted")
     return ep
 
 
+@pytest.mark.parametrize("env_id", ENVS)
 @pytest.mark.parametrize("seed", SEEDS)
-def test_reference_engineer_passes(seed):
-    ep = _scripted("reference", seed)
+def test_reference_engineer_passes(env_id, seed):
+    ep = _scripted("reference", seed, env_id)
     r = ep.data["result"]
     assert r["passed"] and r["score"] == 1.0, r["metrics"]
-    assert r["metrics"]["commissioning_alarms"] == 0
+    assert not [s for s in ep.data["steps"] if s.get("error")]
 
 
-@pytest.mark.parametrize("name", NEGATIVE[ENV])
+@pytest.mark.parametrize("env_id,name", [(e, n) for e in ENVS for n in NEGATIVE[e]])
 @pytest.mark.parametrize("seed", SEEDS)
-def test_known_bad_agents_fail(name, seed):
-    r = _scripted(name, seed).data["result"]
+def test_known_bad_agents_fail(env_id, name, seed):
+    r = _scripted(name, seed, env_id).data["result"]
     assert not r["passed"] and r["score"] < 1.0
 
 
-def test_episode_is_reproducible():
-    a, b = _scripted("reference", 3), _scripted("reference", 3)
+@pytest.mark.parametrize("env_id", ENVS)
+def test_view_has_what_the_viewer_needs(env_id):
+    ep = _scripted("reference", 1, env_id)
+    v = ep.data["view"]
+    assert [p["key"] for p in v["phases"]] == ["commissioning", "acceptance"]
+    cols = len(v["columns"])
+    assert all(len(row) == cols for p in v["phases"] for row in p["rows"])
+    assert all(s["col"] < cols for panel in v["panels"] for s in panel["series"])
+    assert all(r["ok"] for r in v["result"]["requirements"])
+    tools = [s for s in ep.data["steps"] if s["kind"] == "tool"]
+    assert all(s["summary"] for s in tools)
+    json.dumps(ep.data)  # everything is plain JSON
+
+
+@pytest.mark.parametrize("env_id", ENVS)
+def test_episode_is_reproducible(env_id):
+    a, b = _scripted("reference", 3, env_id), _scripted("reference", 3, env_id)
     assert a.data["result"] == b.data["result"]
-    assert a.data["view"]["commissioning"]["rows"] == b.data["view"]["commissioning"]["rows"]
+    assert a.data["view"]["phases"] == b.data["view"]["phases"]
 
 
 def test_prompt_states_the_limits():
@@ -191,3 +208,54 @@ def test_export_and_server_paths(tmp_path):
     h = handler.__new__(handler)
     h.directory = str(tmp_path / "site")
     assert h.translate_path("/episodes/../../secret.json") == str(tmp_path / "secret.json")
+
+
+# --- dsp.scale_readout ---
+
+SCALE = "dsp.scale_readout"
+
+
+def test_scale_chain_cost_rate_and_refusals():
+    env = make(SCALE, 0)
+    fs = env.interference.fs
+    r = env.call("set_chain", {"blocks": [{"type": "moving_average", "n": 64}, {"type": "decimate", "factor": 64},
+                                          {"type": "lowpass", "kind": "butter", "order": 4, "fc_hz": 2.0}]})
+    assert r["cost_per_adc_sample"] == pytest.approx(2 + 10 / 64, abs=1e-3)
+    assert r["output_rate_hz"] == pytest.approx(fs / 64)
+    with pytest.raises(ToolError, match="budget"):
+        env.call("set_chain", {"blocks": [{"type": "fir_lowpass", "taps": 101, "fc_hz": 10, "window": "hann"}]})
+    with pytest.raises(ToolError, match="display rate"):
+        env.call("set_chain", {"blocks": [{"type": "decimate", "factor": 64}, {"type": "decimate", "factor": 64}]})
+    with pytest.raises(ToolError, match="unknown parameters"):
+        env.call("set_chain", {"blocks": [{"type": "notch", "f0_hz": 50, "q": 10, "gain": 2}]})
+    with pytest.raises(ToolError):
+        env.call("set_chain", {"blocks": [{"type": "lowpass", "kind": "butter", "order": 2, "fc_hz": fs}]})
+    with pytest.raises(ToolError):
+        env.call("spectrum", {"points": 1000, "window": "hann", "averages": 1, "source": "adc"})
+
+
+def test_scale_spectrum_finds_the_interference():
+    env = make(SCALE, 0)
+    s = env.interference
+    r = env.call("spectrum", {"points": 16384, "window": "hann", "averages": 2, "source": "adc"})
+    freqs = [f for f, _ in r["peaks"]]
+    for target in (s.mains_hz, 3 * s.mains_hz, s.tone_hz):
+        assert min(abs(f - target) for f in freqs) <= 2 * r["resolution_hz"]
+    strongest_low = max((p for p in r["peaks"] if p[0] < 100), key=lambda p: p[1])
+    assert strongest_low[1] == pytest.approx(s.hum_kg[0], rel=0.2)
+
+
+def test_scale_signal_budget_is_enforced():
+    env = make(SCALE, 0)
+    for _ in range(4):
+        env.call("run", {"seconds": 300})
+    with pytest.raises(ToolError, match="left"):
+        env.call("run", {"seconds": 1})
+
+
+def test_scale_display_follows_the_chain_output():
+    env = make(SCALE, 0)
+    env.call("set_chain", {"blocks": [{"type": "moving_average", "n": 4000}, {"type": "decimate", "factor": 400}]})
+    env.call("set_load", {"kg": 30})
+    r = env.call("run", {"seconds": 5})
+    assert r["readings"]["rows"][-1][1] == pytest.approx(30, abs=0.3)

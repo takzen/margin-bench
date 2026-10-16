@@ -11,12 +11,20 @@
   --output: #c26a00;
   --demand: #7d8794;
   --hold: rgba(42, 120, 214, 0.08);
+  --screen: #0f1a14;
+  --screen-grid: rgba(120, 220, 160, 0.12);
+  --trace: #5be38f;
+  --lcd: #c9d8b6;
+  --lcd-ink: #1d2a16;
+  --weight: #5f6b78;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --water: #2f78c4; --water-top: #5a9fe0; --steel: #6f7b88; --steel-fill: #1d2228; --pipe: #3d4650;
     --signal: #8b95a1; --flow: #5aa2ee; --measured: rgba(90, 162, 238, 0.35); --output: #f0a040; --demand: #8b95a1;
     --hold: rgba(90, 162, 238, 0.1);
+    --screen: #08100c; --screen-grid: rgba(120, 220, 160, 0.1); --trace: #5be38f; --lcd: #9fb38a; --lcd-ink: #121a0d;
+    --weight: #8b95a1;
   }
 }
 
@@ -127,6 +135,10 @@
 .prompt pre { white-space: pre-wrap; font-size: 13px; margin: 10px 0 0; overflow-wrap: anywhere; }
 
 /* Scene parts */
+.scene .lcd { font-family: var(--font-data); font-size: 40px; font-weight: 500; fill: var(--lcd-ink); letter-spacing: 0.02em; }
+.scene .screen-text { font-size: 10.5px; fill: var(--trace); }
+.env-head { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; margin: 10px 0 -4px; }
+.result table.final td, .result table.final th { padding-right: 16px; }
 .scene text { font-family: var(--font-data); font-size: 11px; fill: var(--ink-2); }
 .scene .tag { font-family: var(--font-body); font-weight: 650; font-size: 11px; fill: var(--ink); }
 .scene .big { font-size: 14px; fill: var(--ink); font-weight: 500; }

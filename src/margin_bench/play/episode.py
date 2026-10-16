@@ -92,7 +92,7 @@ class Episode:
         u["cost_usd"] = round(u["cost_usd"] + (cost_usd or 0.0), 6)
         self._step({
             "kind": "model",
-            "sim_t": round(self.env.sim_time, 1),
+            "sim_t": round(self.env.sim_time, 2),
             "text": text,
             "reasoning": reasoning,
             "calls": [c["name"] for c in tool_calls or []],
@@ -106,29 +106,38 @@ class Episode:
     def tool_call(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
         """Run one tool call on the environment and record it. Refused calls return {"error": ...}."""
         t0 = self.env.sim_time
+        viz = None
         try:
             result = self.env.call(name, args)
             error = None
+            summary, alert = self.env.describe(name, args, result)
+            viz = self.env.visual(name, args, result)
         except ToolError as e:
             result, error = {"error": str(e)}, str(e)
-        self._step({
+            summary, alert = f"refused: {e}", True
+        step = {
             "kind": "tool",
             "name": name,
             "args": args,
             "result": result,
             "error": error,
-            "sim_t0": round(t0, 1),
-            "sim_t1": round(self.env.sim_time, 1),
-        })
+            "summary": summary,
+            "alert": alert,
+            "sim_t0": round(t0, 2),
+            "sim_t1": round(self.env.sim_time, 2),
+        }
+        if viz:
+            step["viz"] = viz
+        self._step(step)
         self.data["view"] = self.env.view()
         self.save()
         return result
 
     def bad_call(self, name: str, raw_args: str, error: str) -> dict[str, Any]:
         """Record a tool call whose arguments could not be parsed; the plant is not touched."""
-        t = round(self.env.sim_time, 1)
+        t = round(self.env.sim_time, 2)
         self._step({"kind": "tool", "name": name, "args": {"raw": raw_args}, "result": {"error": error},
-                    "error": error, "sim_t0": t, "sim_t1": t})
+                    "error": error, "summary": error, "alert": True, "sim_t0": t, "sim_t1": t})
         self.save()
         return {"error": error}
 

@@ -15,8 +15,9 @@ margin-bench has two tracks. Both are graded by simulation, never by another mod
 
 [![tests](https://github.com/takzen/margin-bench/actions/workflows/tests.yml/badge.svg)](https://github.com/takzen/margin-bench/actions/workflows/tests.yml)
 
-**Status:** the playground has its first environment, `process.tank_level`; more plants will follow.
-All nine design task families are implemented. No model has been run yet, so there are no results.
+**Status:** the playground has two environments, `process.tank_level` and `dsp.scale_readout`; more
+plants will follow (a furnace with long dead time, a DC motor, an inverted pendulum, a circuit with a
+fault). All nine design task families are implemented. No model has been run yet, so there are no results.
 
 ## Playground
 
@@ -63,10 +64,49 @@ about 40 % of SIMC passes once anti-windup is on.
 * `aggressive` runs the same step test but tunes Ziegler-Nichols PI without anti-windup. The start-up
   saturates the valve, the integral winds up and the level overshoots by 30 to 40 cm. It fails every seed.
 
+### `dsp.scale_readout`: make a weighing scale read right
+
+A load cell under a 0..50 kg platform feeds an ADC (3.2 to 6.4 kHz, the only number the model is
+told). The raw signal carries the load plus mains hum with its 3rd and 5th harmonics (near 50 or 60 Hz,
+possibly a few tenths of a hertz off, drifting slightly), a strong tone from a switching converter
+somewhere between 0.28 and 0.46 of the sample rate, and white noise. The hum alone is 2 to 5 kg.
+
+The model builds the processing chain from blocks and has a budget of 12 multiply-adds per ADC sample:
+
+| Block | Cost per sample at its input rate |
+|---|---|
+| `moving_average(n)` | 2 (running sum) |
+| `notch(f0_hz, q)` | 5 |
+| `lowpass(kind, order, fc_hz)`: Butterworth, Bessel or Chebyshev I | 5 per second-order section |
+| `fir_lowpass(taps, fc_hz, window)` | taps |
+| `decimate(factor)`: drops samples, no filtering of its own | 0; later blocks cost 1/factor |
+
+Its tools are `set_chain`, a `spectrum` analyzer and a `scope` on the ADC signal or the chain output,
+calibration weights (`set_load`), `run` to watch the display (10 readings per second, each the newest
+chain output sample) and `submit`. It has 20 minutes of signal time and 40 tool calls.
+
+The acceptance test starts the chain from rest, puts one weight on, swaps it for another, empties the
+platform, and grades the display: settling into ±0.05 kg after each change within a time limit, and
+over the last 2 s of each plateau a limit on the standard deviation and ±0.01 kg on the mean.
+
+**Difficulty rule.** The limits are the worst result over a family of textbook designs: two moving
+averages over one mains period, decimation by the same length, then a second-order Butterworth lowpass
+at a tenth of the decimated rate, its cut-off scaled by 0.7, 1 and 1.4; 15 % slack on settling, 20 % on
+noise. A second-order lowpass alone cannot meet noise and settling together, and decimating before
+filtering folds the hum and the tone into the reading. Display sampling at 10 Hz turns any 50 Hz
+residue into a slowly wandering offset, so it fails the accuracy limit too.
+
+**Scripted agents**, checked on 20 seeds: `reference` measures the spectrum, finds the mains frequency,
+builds that textbook chain, checks it with a 20 kg weight and passes every seed. `no_chain`,
+`lowpass` (a 5 Hz second-order Butterworth only) and `decimate_first` (decimate to 50 Hz, then filter)
+fail every seed. Sensible alternatives also pass, for example a notch on the mains fundamental followed
+by a lowpass at the right cut-off.
+
 ### Running a model on a plant
 
 ```sh
-uv run margin-bench play --agent reference --watch                     # scripted engineer, free
+uv run margin-bench play process.tank_level --agent reference --watch  # scripted engineer, free
+uv run margin-bench play dsp.scale_readout --agent reference --watch
 uv run margin-bench play --model anthropic/claude-sonnet-5.5 --effort high          # cost estimate only
 uv run margin-bench play --model anthropic/claude-sonnet-5.5 --effort high --execute --watch
 uv run margin-bench play --model qwen3:32b --base-url http://localhost:11434/v1 --watch   # any OpenAI-compatible server

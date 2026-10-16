@@ -1,7 +1,115 @@
 {
  "episodes": [
   {
-   "id": "demo-reference-s0",
+   "id": "scale-reference-s0",
+   "env": {
+    "id": "dsp.scale_readout",
+    "title": "Weighing scale readout",
+    "domain": "dsp",
+    "seed": 0
+   },
+   "agent": {
+    "kind": "scripted",
+    "name": "reference"
+   },
+   "status": "done",
+   "score": 1.0,
+   "passed": true,
+   "wall_s": 0.08,
+   "model_s": 0.0,
+   "usage": {
+    "model_calls": 0,
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "reasoning_tokens": 0,
+    "cost_usd": 0.0
+   },
+   "tool_calls": 10,
+   "started_at": "2026-10-16T06:09:43+00:00"
+  },
+  {
+   "id": "scale-lowpass-s0",
+   "env": {
+    "id": "dsp.scale_readout",
+    "title": "Weighing scale readout",
+    "domain": "dsp",
+    "seed": 0
+   },
+   "agent": {
+    "kind": "scripted",
+    "name": "lowpass"
+   },
+   "status": "done",
+   "score": 0.2249700572694971,
+   "passed": false,
+   "wall_s": 0.03,
+   "model_s": 0.0,
+   "usage": {
+    "model_calls": 0,
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "reasoning_tokens": 0,
+    "cost_usd": 0.0
+   },
+   "tool_calls": 4,
+   "started_at": "2026-10-16T06:09:45+00:00"
+  },
+  {
+   "id": "scale-decimate_first-s0",
+   "env": {
+    "id": "dsp.scale_readout",
+    "title": "Weighing scale readout",
+    "domain": "dsp",
+    "seed": 0
+   },
+   "agent": {
+    "kind": "scripted",
+    "name": "decimate_first"
+   },
+   "status": "done",
+   "score": 0.0,
+   "passed": false,
+   "wall_s": 0.03,
+   "model_s": 0.0,
+   "usage": {
+    "model_calls": 0,
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "reasoning_tokens": 0,
+    "cost_usd": 0.0
+   },
+   "tool_calls": 4,
+   "started_at": "2026-10-16T06:09:47+00:00"
+  },
+  {
+   "id": "scale-no_chain-s0",
+   "env": {
+    "id": "dsp.scale_readout",
+    "title": "Weighing scale readout",
+    "domain": "dsp",
+    "seed": 0
+   },
+   "agent": {
+    "kind": "scripted",
+    "name": "no_chain"
+   },
+   "status": "done",
+   "score": 0.0,
+   "passed": false,
+   "wall_s": 0.02,
+   "model_s": 0.0,
+   "usage": {
+    "model_calls": 0,
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "reasoning_tokens": 0,
+    "cost_usd": 0.0
+   },
+   "tool_calls": 1,
+   "started_at": "2026-10-16T06:09:49+00:00"
+  },
+  {
+   "id": "tank-reference-s0",
    "env": {
     "id": "process.tank_level",
     "title": "Tank level loop",
@@ -15,7 +123,7 @@
    "status": "done",
    "score": 1.0,
    "passed": true,
-   "wall_s": 0.25,
+   "wall_s": 0.26,
    "model_s": 0.0,
    "usage": {
     "model_calls": 0,
@@ -25,10 +133,10 @@
     "cost_usd": 0.0
    },
    "tool_calls": 17,
-   "started_at": "2026-10-15T10:06:27+00:00"
+   "started_at": "2026-10-16T06:09:36+00:00"
   },
   {
-   "id": "demo-aggressive-s0",
+   "id": "tank-aggressive-s0",
    "env": {
     "id": "process.tank_level",
     "title": "Tank level loop",
@@ -52,10 +160,10 @@
     "cost_usd": 0.0
    },
    "tool_calls": 9,
-   "started_at": "2026-10-15T10:06:29+00:00"
+   "started_at": "2026-10-16T06:09:40+00:00"
   },
   {
-   "id": "demo-factory-s0",
+   "id": "tank-factory-s0",
    "env": {
     "id": "process.tank_level",
     "title": "Tank level loop",
@@ -69,7 +177,7 @@
    "status": "done",
    "score": 0.0,
    "passed": false,
-   "wall_s": 0.03,
+   "wall_s": 0.02,
    "model_s": 0.0,
    "usage": {
     "model_calls": 0,
@@ -79,7 +187,7 @@
     "cost_usd": 0.0
    },
    "tool_calls": 1,
-   "started_at": "2026-10-15T10:06:32+00:00"
+   "started_at": "2026-10-16T06:09:38+00:00"
   }
  ]
 }

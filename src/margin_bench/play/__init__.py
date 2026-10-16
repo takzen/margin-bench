@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 from margin_bench.play.env import Environment
-from margin_bench.play.envs import tank
-from margin_bench.play.envs.tank import TankLevel
+from margin_bench.play.envs import scale, tank
 
-ENVIRONMENTS = {TankLevel.id: TankLevel}
+ENVIRONMENTS = {tank.TankLevel.id: tank.TankLevel, scale.ScaleReadout.id: scale.ScaleReadout}
 # Scripted agents per environment: "reference" passes, the ones in NEGATIVE fail.
-SCRIPTED = {TankLevel.id: tank.AGENTS}
-NEGATIVE = {TankLevel.id: tank.NEGATIVE_AGENTS}
+SCRIPTED = {tank.TankLevel.id: tank.AGENTS, scale.ScaleReadout.id: scale.AGENTS}
+NEGATIVE = {tank.TankLevel.id: tank.NEGATIVE_AGENTS, scale.ScaleReadout.id: scale.NEGATIVE_AGENTS}
 
 
 def make(env_id: str, seed: int) -> Environment:
