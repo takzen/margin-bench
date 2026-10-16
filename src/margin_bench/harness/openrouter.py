@@ -14,14 +14,10 @@ from typing import Any
 
 import httpx
 
-from margin_bench.harness.client import ApiError, ChatTurn, Completion, Settings
+from margin_bench.harness.client import ApiError, ChatTurn, Settings
 
 BASE_URL = "https://openrouter.ai/api/v1"
 RETRY_STATUS = {408, 409, 429, 500, 502, 503, 504}
-
-
-def build_body(prompt: str, settings: Settings) -> dict[str, Any]:
-    return build_chat_body([{"role": "user", "content": prompt}], settings)
 
 
 def build_chat_body(
@@ -48,7 +44,7 @@ def build_chat_body(
     return body
 
 
-def _choice(data: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
+def parse_chat(data: dict[str, Any], latency_s: float) -> ChatTurn:
     if data.get("error"):
         err = data["error"]
         raise ApiError(f"error in response body: {err.get('code')} {err.get('message')}")
@@ -56,30 +52,9 @@ def _choice(data: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any], dict[
     if not choices:
         raise ApiError("response has no choices")
     choice = choices[0]
+    message = choice.get("message") or {}
     usage = data.get("usage") or {}
-    return choice, choice.get("message") or {}, usage, usage.get("completion_tokens_details") or {}
-
-
-def parse_response(data: dict[str, Any], latency_s: float) -> Completion:
-    choice, message, usage, details = _choice(data)
-    return Completion(
-        text=message.get("content") or "",
-        reasoning=message.get("reasoning"),
-        finish_reason=choice.get("finish_reason"),
-        prompt_tokens=usage.get("prompt_tokens"),
-        completion_tokens=usage.get("completion_tokens"),
-        reasoning_tokens=details.get("reasoning_tokens"),
-        cost_usd=usage.get("cost"),
-        model_served=data.get("model"),
-        provider_served=data.get("provider"),
-        generation_id=data.get("id"),
-        latency_s=latency_s,
-        raw_usage=usage,
-    )
-
-
-def parse_chat(data: dict[str, Any], latency_s: float) -> ChatTurn:
-    choice, message, usage, details = _choice(data)
+    details = usage.get("completion_tokens_details") or {}
     calls = []
     for c in message.get("tool_calls") or []:
         fn = c.get("function") or {}
@@ -138,15 +113,8 @@ class OpenRouterClient:
         self._max_retries = max_retries
         self._sleep = sleep
 
-    def complete(self, prompt: str, settings: Settings) -> Completion:
-        body = build_chat_body([{"role": "user", "content": prompt}], settings, openrouter=self.openrouter)
-        return self._request(body, parse_response)
-
     def chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]], settings: Settings) -> ChatTurn:
         body = build_chat_body(messages, settings, tools, openrouter=self.openrouter)
-        return self._request(body, parse_chat)
-
-    def _request(self, body: dict[str, Any], parse: Callable[[dict[str, Any], float], Any]) -> Any:
         last_error = "no attempt made"
         for attempt in range(self._max_retries + 1):
             if attempt:
@@ -164,7 +132,7 @@ class OpenRouterClient:
             if resp.status_code != 200:
                 raise ApiError(f"HTTP {resp.status_code}: {resp.text[:500]}")
             try:
-                return parse(resp.json(), latency)
+                return parse_chat(resp.json(), latency)
             except ApiError as e:
                 last_error = str(e)
                 continue

@@ -2,7 +2,7 @@
 
 All draws are built on `random.Random.random()`, the one method whose sequence
 Python guarantees not to change for a given seed. NumPy's Generator makes no
-such promise, so task generators must not use it.
+such promise, so scenario generators must not use it.
 """
 
 from __future__ import annotations

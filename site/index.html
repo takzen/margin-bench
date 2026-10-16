@@ -4,102 +4,114 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>margin-bench</title>
-<meta name="description" content="Can a language model design to spec? An LLM benchmark in DSP, electronics and control, graded by simulation.">
+<meta name="description" content="Can a language model run a plant? Models operate simulated plants through tools, graded by simulation. Watch every run.">
 <link rel="icon" href="assets/logo.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="play.css">
 </head>
 <body>
 <header class="top">
   <div class="wrap">
-    <a class="brand" href="#"><img src="assets/logo.svg" alt=""><b>margin-bench</b></a>
+    <a class="brand" href="index.html"><img src="assets/logo.svg" alt=""><b>margin-bench</b></a>
     <nav aria-label="Sections">
-      <a href="play.html">Playground</a>
-      <a href="#leaderboard">Leaderboard</a>
-      <a href="#families">Tasks</a>
-      <a href="#attempts">Attempts</a>
-      <a href="#method">Method</a>
+      <a href="index.html">Runs</a>
+      <a href="index.html#how">How it works</a>
     </nav>
     <a class="gh" href="https://github.com/takzen/margin-bench">GitHub</a>
   </div>
 </header>
 
-<main class="wrap">
-  <div class="hero">
-    <h1>Can a language model design to spec?</h1>
-    <p>Models get engineering design tasks in digital signal processing, electronics and control. Every answer is graded by measurement or simulation (scipy, python-control, ngspice), never by another model, and every attempt can be opened and checked below.</p>
-    <p class="notice" id="demo-notice" hidden><b>No model has been run yet.</b> The two rows below are each task family's reference design and its known-bad answer, graded exactly like model answers. They show how the grading and the attempt viewer work.</p>
-  </div>
+<main class="wrap play">
+  <section id="list" hidden>
+    <div class="hero">
+      <h1>Can a language model run a plant?</h1>
+      <p>Each model gets a simulated plant and a job: commission a control loop, make a measurement read right. It runs experiments, reads the trends, changes settings and checks the result, as an engineer would. Then an acceptance test decides, by simulation only. Every step, every thought the model shares and every second of plant time can be replayed here.</p>
+    </div>
+    <div class="ep-grid" id="ep-grid"></div>
 
-  <div id="main-content">
-    <section class="block" id="leaderboard">
-      <h2>Leaderboard</h2>
-      <p class="lead">Score from 0 to 1: each family's mean, families weighted equally, with a 95% bootstrap interval over task instances. A score of 1 means every requirement was met.</p>
-      <div class="panel scroll-x"><table class="lb" id="lb"></table></div>
-    </section>
-
-    <section class="block" id="heatmap">
-      <h2>Scores by task family</h2>
-      <p class="lead">Mean score per model and family. Select a cell to list those attempts.</p>
-      <div class="panel scroll-x"><table class="heat" id="heat"></table></div>
-    </section>
-
-    <section class="block" id="cost" hidden>
-      <h2>Score and cost</h2>
-      <p class="lead">Total cost of the run per model, from OpenRouter's billed amounts.</p>
-      <div class="panel"><div class="chart" id="cost-chart"></div></div>
-    </section>
-
-    <section class="block" id="families">
-      <h2>Task families</h2>
-      <p class="lead">Each family generates task instances from a seed. Every family has a reference answer that passes and a known-bad answer that fails, both checked by the test suite.</p>
-      <div class="fam-grid" id="fam-grid"></div>
-    </section>
-
-    <section class="block" id="attempts">
-      <h2>Attempts</h2>
-      <div class="filters">
-        <label>Model <select id="f-model"></select></label>
-        <label>Task family <select id="f-family"></select></label>
-        <label>Outcome
-          <select id="f-outcome">
-            <option value="">All</option>
-            <option value="pass">Pass</option>
-            <option value="fail">Fail</option>
-            <option value="fmt">Format error</option>
-          </select>
-        </label>
-        <span class="count" id="att-count"></span>
-      </div>
-      <div class="panel scroll-x"><table class="att-list" id="att-list"></table></div>
-    </section>
-
-    <section class="block" id="method">
-      <h2>Method</h2>
-      <div class="panel">
+    <section class="block" id="how">
+      <h2>How it works</h2>
+      <div class="panel how">
         <ul>
-          <li><b>No model as judge.</b> Answers are graded by deterministic measurement or simulation.</li>
-          <li><b>Seeded tasks.</b> The dev set is public; the test set is hidden and drawn again for every benchmark version.</li>
-          <li><b>Continuous score and pass/fail.</b> Each requirement gives a ratio that reaches 1 exactly when it is met; the score is the smallest one.</li>
-          <li><b>Format errors count separately,</b> so "cannot design it" and "cannot follow the answer format" stay apart.</li>
-          <li><b>One prompt for every model.</b> Sampling settings are stored with every attempt, and raw transcripts are published.</li>
-          <li><b>Conflict of interest.</b> The project is built with help from Claude, and Claude models are evaluated. Task difficulty is set by rules about design methods, never by any model's score.</li>
+          <li><b>A plant, not a quiz.</b> Each environment is a simulated plant with hidden parameters drawn from a seed: a tank with an unknown delay and noise, a scale whose interference the model has to find. The model only learns what it measures.</li>
+          <li><b>Tools, as an engineer has them.</b> The model drives valves, sets controller parameters, builds a signal chain, looks at trends, spectra and scope traces, puts weights on the platform, and decides when it is done.</li>
+          <li><b>Graded by simulation, never by another model.</b> After the model hands over, an acceptance test runs on the plant and checks written requirements. The score is the weakest requirement's ratio; 1.000 means every one was met.</li>
+          <li><b>Each environment proves itself.</b> A scripted reference engineer passes every seed, working only through the same tools, and scripted known-bad approaches fail every seed. The test suite checks both.</li>
+          <li><b>Limits from design rules.</b> How hard an acceptance test is comes from a family of textbook designs on the true plant, never from any model's score.</li>
+          <li><b>Everything is published.</b> Every tool call, the data it returned, the model's messages and the reasoning it shares, wall time, tokens and cost.</li>
         </ul>
-        <p>Details, code and the full rules are in the <a href="https://github.com/takzen/margin-bench">repository</a>.</p>
+        <p>Code, environments and rules are in the <a href="https://github.com/takzen/margin-bench">repository</a>. Any model can be run on any environment with one command, through OpenRouter or a local OpenAI-compatible server.</p>
       </div>
     </section>
-  </div>
+  </section>
 
-  <section class="viewer block" id="viewer" hidden aria-live="polite"></section>
+  <section id="episode" hidden>
+    <div class="ep-head">
+      <div class="ep-title">
+        <a class="back-link" href="index.html">&larr; All runs</a>
+        <h1 id="ep-name"></h1>
+        <p id="ep-sub"></p>
+      </div>
+      <dl class="ep-stats" id="ep-stats"></dl>
+    </div>
+
+    <div class="stage">
+      <div class="panel scene-panel">
+        <div class="phase" id="phase"></div>
+        <svg class="scene" id="scene" viewBox="0 0 540 400" role="img" aria-label="Animated plant"></svg>
+        <div class="controls">
+          <button type="button" id="btn-play" class="btn" aria-label="Play">Play</button>
+          <button type="button" id="btn-prev" class="btn ghost" aria-label="Previous step">&#9664; step</button>
+          <button type="button" id="btn-next" class="btn ghost" aria-label="Next step">step &#9654;</button>
+          <label class="speed">Speed
+            <select id="speed">
+              <option value="1">1&times;</option>
+              <option value="5">5&times;</option>
+              <option value="20">20&times;</option>
+              <option value="60">60&times;</option>
+              <option value="200">200&times;</option>
+            </select>
+          </label>
+          <label class="hold"><input type="checkbox" id="hold" checked> pause on model messages</label>
+          <span class="clock mono" id="clock"></span>
+        </div>
+        <input type="range" id="scrub" min="0" max="1000" value="0" step="1" aria-label="Plant time">
+        <div class="marks" id="marks" aria-hidden="true"></div>
+      </div>
+
+      <div class="panel log-panel">
+        <h2>What the model did</h2>
+        <ol class="log" id="log"></ol>
+      </div>
+    </div>
+
+    <div class="panel trend-panel">
+      <div class="chart-head">
+        <h2 id="chart-title">Trend</h2>
+        <div class="legend" id="legend"></div>
+      </div>
+      <svg class="trend" id="trend" role="img" aria-label="Trend of the plant over time"></svg>
+      <div class="readout mono" id="readout" hidden></div>
+    </div>
+
+    <div class="panel result" id="result" hidden></div>
+
+    <details class="panel prompt">
+      <summary>The task as the model read it</summary>
+      <pre id="prompt"></pre>
+    </details>
+  </section>
+
+  <p class="notice" id="load-error" hidden></p>
 </main>
 
 <footer class="wrap">
-  <p id="gen-line"></p>
-  <p>margin-bench is an open benchmark. Results can be reproduced with the code and run configs in the repository.</p>
+  <p>Plant time only moves when the model lets it run; the clock shows plant time. Wall time is how long the model took, including its thinking.</p>
 </footer>
 
-<script src="app.js"></script>
+<script src="play.js"></script>
 </body>
 </html>

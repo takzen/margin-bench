@@ -30,9 +30,9 @@ from dataclasses import dataclass, field, replace
 from typing import Any
 
 from margin_bench.core import Score
-from margin_bench.grading import scoring
+from margin_bench import scoring
 from margin_bench.play.env import ToolError, tool
-from margin_bench.tasks.rng import SeededRandom
+from margin_bench.rng import SeededRandom
 
 DT = 0.1  # s, integration step
 TS = 0.5  # s, controller sample time

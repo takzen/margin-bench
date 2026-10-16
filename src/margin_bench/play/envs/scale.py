@@ -34,9 +34,9 @@ import numpy as np
 from scipy import signal as sps
 
 from margin_bench.core import Score
-from margin_bench.grading import scoring
+from margin_bench import scoring
 from margin_bench.play.env import ToolError, tool
-from margin_bench.tasks.rng import SeededRandom
+from margin_bench.rng import SeededRandom
 
 FS_CHOICES = (3200, 4000, 5000, 6400)
 FULL_SCALE = 50.0  # kg

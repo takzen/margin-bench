@@ -39,6 +39,8 @@
 .btn:hover { filter: brightness(1.08); }
 
 /* Run list */
+.how ul { margin: 0 0 10px; padding-left: 20px; display: grid; gap: 8px; }
+.how p { margin: 0; color: var(--ink-2); }
 .ep-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; padding-block: 18px 32px; }
 .ep-card {
   display: grid; gap: 8px; text-decoration: none; color: var(--ink); background: var(--surface);
