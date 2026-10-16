@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 
 import pytest
 
@@ -336,3 +337,48 @@ def test_motor_refusals():
     env.call("run", {"ms": 50})
     with pytest.raises(ToolError, match="standstill"):
         env.call("lock_shaft", {"locked": True})
+
+
+# --- control.cart_pendulum ---
+
+PEND = "control.cart_pendulum"
+
+
+def test_pendulum_hanging_rod_swings_at_the_compound_pendulum_frequency():
+    env = make(PEND, 1)
+    env.call("tap", {"impulse_ns": 0.01})
+    rows = env.call("run", {"ms": 6000})["trend"]["rows"]
+    dev = [(r[2] % 360) - 180 for r in rows]  # deviation from hanging straight down
+    ups = [rows[i][0] / 1000 for i in range(1, len(dev)) if dev[i - 1] < 0 <= dev[i]]
+    period = (ups[-1] - ups[0]) / (len(ups) - 1)
+    r = env.rig
+    m, l, ip, mt = r.rod_kg, r.lc, r.i_pivot, r.cart_kg + r.rod_kg
+    w = math.sqrt(m * 9.81 * l * mt / (ip * mt - (m * l) ** 2))  # the free cart makes it a little faster
+    assert period == pytest.approx(2 * math.pi / w, rel=0.05)
+
+
+def test_pendulum_falls_without_a_controller_and_is_caught_with_lqr():
+    from margin_bench.play.envs.pendulum import lqr
+
+    env = make(PEND, 2)
+    env.call("release_upright", {"angle_deg": 2})
+    r = env.call("run", {"ms": 3000})
+    assert abs(r["theta_deg"]) > 30
+    g = lqr(env.rig)
+    env.call("hang_rod", {})
+    env.call("set_gains", {"k_x": g.k_x, "k_v": g.k_v, "k_theta": g.k_theta, "k_omega": g.k_omega, "filter_ms": 5})
+    env.call("set_controller", {"on": True})
+    env.call("release_upright", {"angle_deg": 2})
+    r = env.call("run", {"ms": 4000})
+    assert abs(r["theta_deg"]) < 1 and abs(r["x_m"]) < 0.02
+
+
+def test_pendulum_refusals():
+    env = make(PEND, 0)
+    with pytest.raises(ToolError):
+        env.call("release_upright", {"angle_deg": 20})
+    with pytest.raises(ToolError):
+        env.call("set_reference", {"x_m": 0.45})
+    env.call("set_controller", {"on": True})
+    with pytest.raises(ToolError, match="controller off"):
+        env.call("set_force", {"newtons": 1})

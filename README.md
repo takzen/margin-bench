@@ -17,8 +17,8 @@ watched live while the model works.
 
 [![tests](https://github.com/takzen/margin-bench/actions/workflows/tests.yml/badge.svg)](https://github.com/takzen/margin-bench/actions/workflows/tests.yml)
 
-**Status:** four environments, `process.tank_level`, `process.inline_heater`, `control.dc_motor` and
-`dsp.scale_readout`. Two more are on the way: an inverted pendulum and a circuit with a fault.
+**Status:** five environments, `process.tank_level`, `process.inline_heater`, `control.dc_motor`,
+`control.cart_pendulum` and `dsp.scale_readout`. One more is on the way: a circuit with a fault.
 No model has been run yet; the site shows the scripted agents.
 
 ## How an environment works
@@ -144,6 +144,33 @@ for J/Kt, tunes the speed loop, checks the start-up and the load steps, and pass
 fail every seed. `no_antiwindup`, shown on the site, fails on all but the lightest rotors, whose
 start-up is too short to wind the integral up.
 
+### `control.cart_pendulum`: balance an inverted pendulum on a cart
+
+A cart on a 1 m track with end stops, pushed by a force-controlled drive, carries a uniform rod on a
+pivot. The rod's mass and length are given; the cart's mass, its friction and the pivot friction are
+hidden. Encoders measure the cart position (0.05 mm steps) and the rod angle (4096 steps per turn). The
+controller runs at 100 Hz: force = -(k_x (x - x_ref) + k_v v + k_theta theta + k_omega omega), the
+velocities estimated by differencing with an optional filter, the force applied one sample later. If the
+rod tips past 30 degrees the controller switches itself off.
+
+Tools: `set_gains`, `set_controller(on)`, `set_reference(x_m)`, `set_force(newtons)` (controller off),
+`hang_rod()`, `release_upright(angle_deg)`, `tap(impulse_ns)`, `run(ms)` and `submit()`. Two minutes of rig
+time, 40 tool calls. The model has to design the four gains itself, for example by pole placement or LQR
+on a linearized model it derives.
+
+The acceptance test lets the rod go 3 degrees off upright, moves the cart reference to +0.2 m and back,
+then taps the top of the rod. Requirements: the rod never falls and the cart never reaches an end stop;
+the rod caught, each move completed and the tap recovered (within 1 cm and 1 degree) within time limits.
+
+**Difficulty rule.** The limits are the worst result over a family of LQR designs on the true linearized
+plant, with the force weight and the position weight scaled by 0.7 and 1.4, and a 5 ms velocity filter;
+20 % slack.
+
+**Scripted agents**, checked on 20 seeds: `reference` pushes the cart with the rod hanging, fits mass and
+friction, solves LQR, catches the rod, checks the moves and the tap, and passes every seed. `factory`
+(no gains), `angle_only` (balancing the angle, ignoring the cart position) and `wrong_sign` (cart gains
+with the intuitive but wrong sign) fail every seed.
+
 ### `dsp.scale_readout`: make a weighing scale read right
 
 A load cell under a 0..50 kg platform feeds an ADC (3.2 to 6.4 kHz, the only number the model is
@@ -221,7 +248,7 @@ uv run margin-bench serve                                     # the site locally
 ```
 
 The site in `site/` is plain HTML, JavaScript and SVG with no build step. GitHub Pages deploys it on
-every push to `main`.
+every push to `main`. A link can open a run at a given moment: `?ep=<run>&t=<seconds>&pause`.
 
 ## Conflict of interest
 

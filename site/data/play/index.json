@@ -1,6 +1,114 @@
 {
  "episodes": [
   {
+   "id": "pendulum-reference-s0",
+   "env": {
+    "id": "control.cart_pendulum",
+    "title": "Inverted pendulum on a cart",
+    "domain": "control",
+    "seed": 0
+   },
+   "agent": {
+    "kind": "scripted",
+    "name": "reference"
+   },
+   "status": "done",
+   "score": 1.0,
+   "passed": true,
+   "wall_s": 0.42,
+   "model_s": 0.0,
+   "usage": {
+    "model_calls": 0,
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "reasoning_tokens": 0,
+    "cost_usd": 0.0
+   },
+   "tool_calls": 18,
+   "started_at": "2026-10-16T16:36:07+00:00"
+  },
+  {
+   "id": "pendulum-angle_only-s0",
+   "env": {
+    "id": "control.cart_pendulum",
+    "title": "Inverted pendulum on a cart",
+    "domain": "control",
+    "seed": 0
+   },
+   "agent": {
+    "kind": "scripted",
+    "name": "angle_only"
+   },
+   "status": "done",
+   "score": 0.0,
+   "passed": false,
+   "wall_s": 0.14,
+   "model_s": 0.0,
+   "usage": {
+    "model_calls": 0,
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "reasoning_tokens": 0,
+    "cost_usd": 0.0
+   },
+   "tool_calls": 2,
+   "started_at": "2026-10-16T16:36:12+00:00"
+  },
+  {
+   "id": "pendulum-factory-s0",
+   "env": {
+    "id": "control.cart_pendulum",
+    "title": "Inverted pendulum on a cart",
+    "domain": "control",
+    "seed": 0
+   },
+   "agent": {
+    "kind": "scripted",
+    "name": "factory"
+   },
+   "status": "done",
+   "score": 0.0,
+   "passed": false,
+   "wall_s": 0.14,
+   "model_s": 0.0,
+   "usage": {
+    "model_calls": 0,
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "reasoning_tokens": 0,
+    "cost_usd": 0.0
+   },
+   "tool_calls": 1,
+   "started_at": "2026-10-16T16:36:09+00:00"
+  },
+  {
+   "id": "pendulum-wrong_sign-s0",
+   "env": {
+    "id": "control.cart_pendulum",
+    "title": "Inverted pendulum on a cart",
+    "domain": "control",
+    "seed": 0
+   },
+   "agent": {
+    "kind": "scripted",
+    "name": "wrong_sign"
+   },
+   "status": "done",
+   "score": 0.0,
+   "passed": false,
+   "wall_s": 0.14,
+   "model_s": 0.0,
+   "usage": {
+    "model_calls": 0,
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "reasoning_tokens": 0,
+    "cost_usd": 0.0
+   },
+   "tool_calls": 2,
+   "started_at": "2026-10-16T16:36:14+00:00"
+  },
+  {
    "id": "motor-reference-s0",
    "env": {
     "id": "control.dc_motor",

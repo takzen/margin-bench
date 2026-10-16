@@ -573,7 +573,71 @@ const motorScene = {
   },
 };
 
-const SCENES = { tank: tankScene, scale: scaleScene, heater: heaterScene, motor: motorScene };
+// ---------- scene: inverted pendulum on a cart ----------
+
+const pendulumScene = {
+  build(svg, scene) {
+    const sc = {};
+    sc.px = (x) => 270 + (x / scene.track_m) * 240;
+    el("line", { x1: 20, x2: 520, y1: 318, y2: 318, stroke: "var(--steel)", "stroke-width": 4 }, svg);
+    for (const s of [-1, 1]) {
+      el("rect", { x: s < 0 ? 14 : 516, y: 288, width: 10, height: 34, fill: "var(--critical)", opacity: 0.8 }, svg);
+    }
+    for (let x = -0.4; x <= 0.401; x += 0.1) {
+      el("line", { x1: sc.px(x), x2: sc.px(x), y1: 322, y2: 330, stroke: "var(--axis)" }, svg);
+      txt(svg, sc.px(x), 344, `${x.toFixed(1)}`, { "text-anchor": "middle" });
+    }
+    txt(svg, 520, 362, "m", { "text-anchor": "end" });
+    sc.refMark = el("polygon", { points: "0,0 -7,12 7,12", fill: "var(--ink)" }, svg);
+    sc.cart = el("g", {}, svg);
+    el("rect", { x: -40, y: -34, width: 80, height: 26, rx: 5, fill: "var(--steel-fill)", stroke: "var(--ink-2)", "stroke-width": 1.5 }, sc.cart);
+    for (const wx of [-24, 24]) el("circle", { cx: wx, cy: -4, r: 6, fill: "var(--ink-2)" }, sc.cart);
+    sc.force = el("line", { y1: -21, y2: -21, stroke: "var(--output)", "stroke-width": 4, "stroke-linecap": "round" }, sc.cart);
+    sc.forceHead = el("polygon", { fill: "var(--output)" }, sc.cart);
+    sc.rodLen = Math.min(240, scene.rod_m * 300);
+    sc.rod = el("line", { stroke: "var(--curve)", "stroke-width": 7, "stroke-linecap": "round" }, svg);
+    sc.pivot = el("circle", { r: 5, fill: "var(--ink)" }, svg);
+    sc.angle = txt(svg, 20, 30, "", { class: "big" });
+    sc.pos = txt(svg, 20, 50, "", {});
+    sc.fText = txt(svg, 20, 68, "", {});
+    sc.status = txt(svg, 520, 30, "", { "text-anchor": "end", class: "tag" });
+    sc.gains = txt(svg, 20, 384, "", {});
+    return sc;
+  },
+  draw(sc, scene, row, phase) {
+    const [, x, th, f, ref] = row;
+    const cx = sc.px(x), py = 284;
+    sc.cart.setAttribute("transform", `translate(${cx.toFixed(1)} 318)`);
+    const fl = (60 * f) / scene.f_max;
+    sc.force.setAttribute("x1", 0); sc.force.setAttribute("x2", fl.toFixed(1));
+    const s = Math.sign(fl) || 1;
+    sc.forceHead.setAttribute("points", Math.abs(fl) > 4 ? `${fl + s * 8},-21 ${fl},-27 ${fl},-15` : "");
+    const a = (th * Math.PI) / 180;
+    const tx = cx + sc.rodLen * Math.sin(a), ty = py - sc.rodLen * Math.cos(a);
+    sc.rod.setAttribute("x1", cx); sc.rod.setAttribute("y1", py); sc.rod.setAttribute("x2", tx.toFixed(1)); sc.rod.setAttribute("y2", ty.toFixed(1));
+    sc.pivot.setAttribute("cx", cx); sc.pivot.setAttribute("cy", py);
+    const fallen = Math.abs(th) > scene.fall_deg;
+    sc.rod.setAttribute("stroke", fallen ? "var(--critical)" : "var(--curve)");
+    sc.angle.textContent = `θ ${th >= 0 ? "+" : ""}${th.toFixed(2)}°`;
+    sc.pos.textContent = `cart ${x >= 0 ? "+" : ""}${x.toFixed(3)} m`;
+    sc.fText.textContent = `force ${f.toFixed(2)} N`;
+    if (isNum(ref)) {
+      sc.refMark.setAttribute("transform", `translate(${sc.px(ref).toFixed(1)} 324)`);
+      sc.refMark.setAttribute("visibility", "visible");
+    } else sc.refMark.setAttribute("visibility", "hidden");
+    const atStop = Math.abs(x) >= scene.track_m - 1e-4;
+    sc.status.textContent = atStop ? "END STOP" : fallen ? (Math.abs(th) > 170 ? "rod hanging" : "ROD FALLING") : isNum(ref) ? "controller on" : "controller off";
+    sc.status.setAttribute("fill", atStop || (fallen && Math.abs(th) <= 170) ? "var(--critical)" : "var(--ink-2)");
+    let g = scene.final_gains;
+    if (phase.key !== "acceptance") {
+      const st = latestStep((s2) => s2.kind === "tool" && s2.result && s2.result.gains);
+      g = st ? st.result.gains : null;
+    }
+    sc.gains.textContent = g ? `K = [${[g.k_x, g.k_v, g.k_theta, g.k_omega].map((v) => (+v).toPrecision(4)).join(", ")}], filter ${(+g.filter_ms).toFixed(1)} ms` : "";
+  },
+};
+
+const SCENES = { tank: tankScene, scale: scaleScene, heater: heaterScene, motor: motorScene, pendulum: pendulumScene };
 
 function buildScene() {
   const svg = $("scene");
@@ -883,9 +947,12 @@ function adopt(ep) {
   if (first || S.logCount !== ep.steps.length) renderLog();
   renderResult();
   if (first) {
-    seek(ep.status === "running" ? S.total : 0);
+    // ?t=<seconds of story time> opens a run at a given moment; &pause keeps it still (for links and screenshots)
+    const q = new URLSearchParams(location.search);
+    const t0 = q.has("t") ? Number(q.get("t")) : null;
+    seek(ep.status === "running" ? S.total : isNum(t0) ? t0 : 0);
     S.follow = ep.status === "running";
-    setPlaying(true);
+    setPlaying(!q.has("pause"));
     requestAnimationFrame(tick);
   } else {
     S.T = Math.min(keepT, S.total);
