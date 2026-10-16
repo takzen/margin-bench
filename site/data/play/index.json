@@ -15,7 +15,7 @@
    "status": "done",
    "score": 1.0,
    "passed": true,
-   "wall_s": 0.42,
+   "wall_s": 0.41,
    "model_s": 0.0,
    "usage": {
     "model_calls": 0,
@@ -25,7 +25,7 @@
     "cost_usd": 0.0
    },
    "tool_calls": 18,
-   "started_at": "2026-10-16T16:36:07+00:00"
+   "started_at": "2026-10-16T17:00:39+00:00"
   },
   {
    "id": "pendulum-angle_only-s0",
@@ -52,7 +52,7 @@
     "cost_usd": 0.0
    },
    "tool_calls": 2,
-   "started_at": "2026-10-16T16:36:12+00:00"
+   "started_at": "2026-10-16T17:00:44+00:00"
   },
   {
    "id": "pendulum-factory-s0",
@@ -79,7 +79,7 @@
     "cost_usd": 0.0
    },
    "tool_calls": 1,
-   "started_at": "2026-10-16T16:36:09+00:00"
+   "started_at": "2026-10-16T17:00:41+00:00"
   },
   {
    "id": "pendulum-wrong_sign-s0",
@@ -106,7 +106,7 @@
     "cost_usd": 0.0
    },
    "tool_calls": 2,
-   "started_at": "2026-10-16T16:36:14+00:00"
+   "started_at": "2026-10-16T17:00:46+00:00"
   },
   {
    "id": "motor-reference-s0",

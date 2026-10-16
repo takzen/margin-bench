@@ -50,7 +50,7 @@ MAX_RUN_MS = 10000.0
 MAX_ROWS = 300
 MAX_CALLS = 40
 
-T_REF1, T_REF2, T_TAP, T_END = 3.0, 7.0, 11.0, 15.0
+T_REF1, T_REF2, T_TAP, T_END = 3.0, 7.0, 11.0, 17.0
 MOVE = 0.2  # m
 SETTLE_X = 0.01  # m
 SETTLE_TH = math.radians(1.0)
@@ -290,7 +290,7 @@ Now: the rod hangs straight down, the cart rests at x = 0, the controller is off
 Acceptance test. It runs after you call submit, with the gains and filter you leave:
 1. The cart is at x = 0 with the reference at 0 and the controller on. The rod is let go at {tilt:g} degrees from upright.
 2. At t = 3 s the reference steps to +0.2 m; at t = 7 s back to 0. At t = 11 s the top of the rod is tapped with \
-{tap:g} N s toward +x. The test ends at t = 15 s.
+{tap:g} N s toward +x. The test ends at t = 17 s.
 Requirements:
 - the rod never falls past {fall:g} degrees and the cart never reaches an end stop;
 - after the release: |x| < 1 cm and |theta| < 1 degree within {catch} s, and staying so until t = 3 s;
@@ -314,9 +314,9 @@ class CartPendulum:
         rod_kg = round(rng.uniform(0.1, 0.3), 3)
         cart = rng.uniform(0.6, 2.0)
         self.rig = Rig(cart_kg=cart, rod_kg=rod_kg, rod_m=rod_m, cart_friction=rng.uniform(0.5, 3.0),
-                       pivot_friction=rng.uniform(1e-4, 2e-3), f_max=float(round(rng.uniform(8.0, 15.0))))
-        # the tap kicks the rod to about 0.8 rad/s, whatever its size
-        self.scenario = Scenario(tilt_deg=3.0, tap_ns=round(0.8 * rod_kg * rod_m / 3, 4))
+                       pivot_friction=rng.uniform(1e-4, 2e-3), f_max=float(round(rng.uniform(10.0, 16.0))))
+        # the tap kicks the rod to about 0.6 rad/s, whatever its size
+        self.scenario = Scenario(tilt_deg=3.0, tap_ns=round(0.6 * rod_kg * rod_m / 3, 4))
         if seed not in _LIMITS:
             family = [acceptance(self.rig, self.scenario, lqr(self.rig, a, b), self._noise("acceptance")) for a, b in FAMILY]
             _LIMITS[seed] = {k: math.ceil(SLACK * 10 * max(f[k] for f in family)) / 10 for k in ("catch_s", "move_s", "tap_s")}
