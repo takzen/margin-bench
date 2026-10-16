@@ -1,6 +1,114 @@
 {
  "episodes": [
   {
+   "id": "motor-reference-s0",
+   "env": {
+    "id": "control.dc_motor",
+    "title": "DC motor speed drive",
+    "domain": "control",
+    "seed": 0
+   },
+   "agent": {
+    "kind": "scripted",
+    "name": "reference"
+   },
+   "status": "done",
+   "score": 1.0,
+   "passed": true,
+   "wall_s": 0.14,
+   "model_s": 0.0,
+   "usage": {
+    "model_calls": 0,
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "reasoning_tokens": 0,
+    "cost_usd": 0.0
+   },
+   "tool_calls": 21,
+   "started_at": "2026-10-16T16:25:55+00:00"
+  },
+  {
+   "id": "motor-voltage_bump-s0",
+   "env": {
+    "id": "control.dc_motor",
+    "title": "DC motor speed drive",
+    "domain": "control",
+    "seed": 0
+   },
+   "agent": {
+    "kind": "scripted",
+    "name": "voltage_bump"
+   },
+   "status": "done",
+   "score": 0.5,
+   "passed": false,
+   "wall_s": 0.03,
+   "model_s": 0.0,
+   "usage": {
+    "model_calls": 0,
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "reasoning_tokens": 0,
+    "cost_usd": 0.0
+   },
+   "tool_calls": 5,
+   "started_at": "2026-10-16T16:25:59+00:00"
+  },
+  {
+   "id": "motor-factory-s0",
+   "env": {
+    "id": "control.dc_motor",
+    "title": "DC motor speed drive",
+    "domain": "control",
+    "seed": 0
+   },
+   "agent": {
+    "kind": "scripted",
+    "name": "factory"
+   },
+   "status": "done",
+   "score": 0.0,
+   "passed": false,
+   "wall_s": 0.03,
+   "model_s": 0.0,
+   "usage": {
+    "model_calls": 0,
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "reasoning_tokens": 0,
+    "cost_usd": 0.0
+   },
+   "tool_calls": 1,
+   "started_at": "2026-10-16T16:25:57+00:00"
+  },
+  {
+   "id": "motor-no_antiwindup-s0",
+   "env": {
+    "id": "control.dc_motor",
+    "title": "DC motor speed drive",
+    "domain": "control",
+    "seed": 0
+   },
+   "agent": {
+    "kind": "scripted",
+    "name": "no_antiwindup"
+   },
+   "status": "done",
+   "score": 0.0,
+   "passed": false,
+   "wall_s": 0.03,
+   "model_s": 0.0,
+   "usage": {
+    "model_calls": 0,
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "reasoning_tokens": 0,
+    "cost_usd": 0.0
+   },
+   "tool_calls": 3,
+   "started_at": "2026-10-16T16:26:00+00:00"
+  },
+  {
    "id": "scale-reference-s0",
    "env": {
     "id": "dsp.scale_readout",

@@ -459,7 +459,121 @@ const heaterScene = {
   },
 };
 
-const SCENES = { tank: tankScene, scale: scaleScene, heater: heaterScene };
+// ---------- scene: DC motor drive ----------
+
+function bar(svg, x, y, w, label) {
+  el("rect", { x, y, width: w, height: 14, rx: 3, fill: "var(--chip)" }, svg);
+  const fill = el("rect", { x, y, height: 14, rx: 3, fill: "var(--curve)" }, svg);
+  txt(svg, x, y - 5, label, { class: "tag" });
+  const value = el("text", { x: x + w, y: y + 27, "text-anchor": "end", fill: "var(--ink)" }, svg);
+  return { x, y, w, fill, value };
+}
+
+function block(svg, x, y, w, a, b) {
+  const r = el("rect", { x, y, width: w, height: 34, rx: 5, fill: "var(--surface)", stroke: "var(--curve)", "stroke-width": 1.2 }, svg);
+  txt(svg, x + w / 2, y + 14, a, { "text-anchor": "middle", class: "tag" });
+  const v = txt(svg, x + w / 2, y + 27, b, { "text-anchor": "middle" });
+  return { r, v };
+}
+
+const motorScene = {
+  build(svg, scene) {
+    const sc = { angle: 0 };
+    // motor, shaft, flywheel, dynamometer
+    el("rect", { x: 40, y: 58, width: 170, height: 104, rx: 16, fill: "var(--steel-fill)", stroke: "var(--steel)", "stroke-width": 3 }, svg);
+    for (let i = 0; i < 6; i++) el("line", { x1: 60 + i * 26, x2: 60 + i * 26, y1: 66, y2: 154, stroke: "var(--steel)", opacity: 0.5 }, svg);
+    el("rect", { x: 100, y: 38, width: 50, height: 20, rx: 3, fill: "var(--steel-fill)", stroke: "var(--steel)", "stroke-width": 2 }, svg);
+    txt(svg, 125, 116, "M", { "text-anchor": "middle", class: "big" });
+    el("rect", { x: 210, y: 104, width: 120, height: 12, fill: "var(--steel)" }, svg);
+    sc.wheel = el("g", { transform: "translate(262 110)" }, svg);
+    el("circle", { r: 42, fill: "var(--surface)", stroke: "var(--ink-2)", "stroke-width": 3 }, sc.wheel);
+    for (let k = 0; k < 4; k++) el("line", { x1: 0, y1: 0, x2: 40 * Math.cos((k * Math.PI) / 2), y2: 40 * Math.sin((k * Math.PI) / 2), stroke: k ? "var(--ink-2)" : "var(--output)", "stroke-width": k ? 3 : 5, "stroke-linecap": "round" }, sc.wheel);
+    el("circle", { r: 6, fill: "var(--ink-2)" }, sc.wheel);
+    sc.lock = txt(svg, 262, 170, "", { "text-anchor": "middle", class: "tag", fill: "var(--warn-ink)" });
+    txt(svg, 262, 186, "rotation shown 100x slower", { "text-anchor": "middle" });
+    sc.dyno = el("rect", { x: 330, y: 70, width: 110, height: 80, rx: 8, stroke: "var(--ink-2)", "stroke-width": 1.5 }, svg);
+    txt(svg, 385, 98, "dynamometer", { "text-anchor": "middle", class: "tag" });
+    sc.loadText = el("text", { x: 385, y: 120, "text-anchor": "middle", class: "big" }, svg);
+    sc.mode = el("text", { x: 125, y: 30, "text-anchor": "middle", class: "tag" }, svg);
+    sc.trip = el("text", { x: 125, y: 186, "text-anchor": "middle", class: "tag", fill: "var(--critical)" }, svg);
+    // gauges
+    sc.speed = bar(svg, 456, 58, 80, "speed");
+    sc.speedRef = el("line", { y1: 54, y2: 76, stroke: "var(--ink)", "stroke-width": 2 }, svg);
+    sc.cur = bar(svg, 456, 110, 80, "current");
+    sc.volt = bar(svg, 456, 162, 80, "voltage");
+    // cascade
+    txt(svg, 10, 222, "Cascade", { class: "tag" });
+    const y = 234;
+    sc.bRef = block(svg, 10, y, 74, "speed ref", "");
+    sc.bSpd = block(svg, 104, y, 84, "speed PI", "");
+    sc.bLim = block(svg, 208, y, 80, "limit", `±${scene.i_max} A`);
+    sc.bCur = block(svg, 308, y, 84, "current PI", "");
+    sc.bBr = block(svg, 412, y, 64, "bridge", "");
+    txt(svg, 496, y + 22, "M", { class: "tag" });
+    for (const x of [84, 188, 288, 392, 476]) el("path", { d: `M${x} ${y + 17} h18`, stroke: "var(--ink-2)", "stroke-width": 1.4 }, svg);
+    el("path", { d: `M500 ${y + 34} V${y + 72} H146 V${y + 34}`, fill: "none", stroke: "var(--signal)", "stroke-dasharray": "5 4" }, svg);
+    txt(svg, 320, y + 66, "encoder speed", { "text-anchor": "middle" });
+    el("path", { d: `M444 ${y + 34} V${y + 54} H350 V${y + 34}`, fill: "none", stroke: "var(--signal)", "stroke-dasharray": "3 3" }, svg);
+    txt(svg, 397, y + 50, "current", { "text-anchor": "middle" });
+    // gains
+    sc.gains = txt(svg, 10, 336, "", {});
+    sc.gains2 = txt(svg, 10, 354, "", {});
+    return sc;
+  },
+  draw(sc, scene, row, phase, dt) {
+    const [t, speed, meas, cur, iref, volt, load, sref] = row;
+    sc.angle = (sc.angle + dt * speed * 0.06) % 360;
+    sc.wheel.setAttribute("transform", `translate(262 110) rotate(${sc.angle.toFixed(1)})`);
+    sc.loadText.textContent = `${load.toFixed(3)} Nm`;
+    sc.dyno.setAttribute("fill", load > 0 ? `rgba(240,120,40,${(0.15 + 0.6 * Math.min(1, load / scene.load_max)).toFixed(2)})` : "var(--surface)");
+    const top = scene.no_load_rpm * 1.1;
+    const setBar = (b, v, lo, hi, text, warn) => {
+      const z = b.x + (b.w * (0 - lo)) / (hi - lo), x = b.x + (b.w * (Math.min(hi, Math.max(lo, v)) - lo)) / (hi - lo);
+      b.fill.setAttribute("x", Math.min(z, x)); b.fill.setAttribute("width", Math.abs(x - z));
+      b.fill.setAttribute("fill", warn ? "var(--critical)" : "var(--curve)");
+      b.value.textContent = text;
+    };
+    setBar(sc.speed, speed, 0, top, `${speed.toFixed(0)} rpm`, false);
+    if (isNum(sref)) {
+      const x = sc.speed.x + (sc.speed.w * Math.min(top, sref)) / top;
+      sc.speedRef.setAttribute("x1", x); sc.speedRef.setAttribute("x2", x); sc.speedRef.setAttribute("visibility", "visible");
+    } else sc.speedRef.setAttribute("visibility", "hidden");
+    setBar(sc.cur, cur, -scene.trip_a, scene.trip_a, `${cur.toFixed(2)} A`, Math.abs(cur) > scene.i_max * 1.02);
+    setBar(sc.volt, volt, -scene.v_supply, scene.v_supply, `${volt.toFixed(1)} V`, false);
+    // mode and trip, from the log
+    let mode = "speed", tripped = false;
+    if (phase.key !== "acceptance") {
+      const s = latestStep((st) => st.kind === "tool" && st.result && st.result.mode);
+      mode = s ? s.result.mode : "off";
+      for (const st of S.ep.steps) for (const a of (st.result && st.result.alarms) || []) if (Math.abs(a.t_ms / 1000 - t) < 0.15) tripped = true;
+      const lk = latestStep((st) => st.kind === "tool" && st.name === "lock_shaft");
+      sc.lock.textContent = lk && lk.result.shaft_locked ? "SHAFT LOCKED" : "";
+    } else sc.lock.textContent = "";
+    sc.mode.textContent = `mode: ${mode}`;
+    sc.trip.textContent = tripped ? "OVERCURRENT TRIP" : "";
+    const sat = isNum(iref) && Math.abs(iref) >= scene.i_max * 0.999;
+    sc.bLim.r.setAttribute("stroke", sat ? "var(--critical)" : "var(--curve)");
+    sc.bLim.v.textContent = sat ? "at the limit" : `±${scene.i_max} A`;
+    sc.bRef.v.textContent = isNum(sref) ? `${sref.toFixed(0)} rpm` : "–";
+    sc.bSpd.v.textContent = isNum(iref) && mode === "speed" ? `${iref.toFixed(2)} A` : "–";
+    sc.bCur.v.textContent = isNum(iref) ? `ref ${iref.toFixed(2)} A` : "–";
+    sc.bBr.v.textContent = `${volt.toFixed(1)} V`;
+    let g = scene.final_gains;
+    if (phase.key !== "acceptance") {
+      const s = latestStep((st) => st.kind === "tool" && st.result && st.result.gains);
+      g = s ? s.result.gains : null;
+    }
+    if (g) {
+      sc.gains.textContent = `current PI: Kp ${(+g.current_kp).toPrecision(3)} V/A, Ki ${(+g.current_ki).toPrecision(3)} V/(A s)`;
+      sc.gains2.textContent = `speed PI: Kp ${(+g.speed_kp).toPrecision(3)} A/rpm, Ki ${(+g.speed_ki).toPrecision(3)} A/(rpm s), anti-windup ${g.anti_windup ? "on" : "off"}, filter ${(+g.filter_ms).toFixed(2)} ms`;
+    } else {
+      sc.gains.textContent = "factory gains";
+      sc.gains2.textContent = "";
+    }
+  },
+};
+
+const SCENES = { tank: tankScene, scale: scaleScene, heater: heaterScene, motor: motorScene };
 
 function buildScene() {
   const svg = $("scene");
@@ -475,7 +589,7 @@ function drawScene(T, dt) {
 
 // ---------- trend chart (generic, from view.panels) ----------
 
-const CH = { W: 1000, L: 58, R: 16, top: 22, gap: 40, bottom: 30 };
+const CH = { W: 1000, L: 74, R: 16, top: 22, gap: 40, bottom: 30 };
 
 function niceStep(span, target) {
   const steps = [0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200];
@@ -526,7 +640,7 @@ function buildChart(p) {
   const step = niceStep(p.dur, 8);
   for (let t = 0; t <= p.dur + 1e-9; t += step) {
     el("line", { x1: xs(t), x2: xs(t), y1: yBot, y2: yBot + 5, stroke: "var(--axis)" }, grid);
-    txt(grid, xs(t), yBot + 18, clock(t), { "text-anchor": "middle" });
+    txt(grid, xs(t), yBot + 18, p.dur < 60 ? `${+t.toFixed(2)} s` : clock(t), { "text-anchor": "middle" });
   }
   for (const e of p.events || []) {
     el("line", { x1: xs(e.t_s), x2: xs(e.t_s), y1: yTop, y2: yBot, stroke: "var(--ink-2)", "stroke-width": 1 }, grid);
@@ -761,7 +875,7 @@ function adopt(ep) {
   S.chart = null;
   if (first) {
     buildScene();
-    const speed = [1, 5, 20, 60, 200].find((s) => S.total / s <= 120) || 200;
+    const speed = [0.1, 0.25, 1, 5, 20, 60, 200].find((s) => S.total / s <= 120) || 200;
     S.speed = speed;
     $("speed").value = String(speed);
   }

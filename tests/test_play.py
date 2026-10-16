@@ -298,3 +298,41 @@ def test_heater_refusals():
         env.call("set_tuning", {"kd": 3})
     with pytest.raises(ToolError):
         env.call("set_tuning", {"flow_feedforward": "yes"})
+
+
+# --- control.dc_motor ---
+
+MOTOR = "control.dc_motor"
+
+
+def test_motor_locked_rotor_current_is_v_over_r():
+    env = make(MOTOR, 3)
+    m = env.motor
+    env.call("lock_shaft", {"locked": True})
+    env.call("set_mode", {"mode": "voltage", "value": 0.05 * m.v_supply})
+    r = env.call("run", {"ms": 200})
+    tail = [row[2] for row in r["trend"]["rows"][-50:]]
+    assert sum(tail) / len(tail) == pytest.approx(0.05 * m.v_supply / m.r, rel=0.02)
+    assert r["speed_rpm"] == 0
+
+
+def test_motor_full_voltage_at_rest_trips():
+    env = make(MOTOR, 3)
+    env.call("set_mode", {"mode": "voltage", "value": env.motor.v_supply})
+    r = env.call("run", {"ms": 20})
+    assert r["alarms"][0]["alarm"] == "overcurrent trip" and r["mode"] == "off"
+    assert not env.finish().passed
+
+
+def test_motor_refusals():
+    env = make(MOTOR, 0)
+    with pytest.raises(ToolError):
+        env.call("set_mode", {"mode": "current", "value": 10 * env.motor.i_max})
+    with pytest.raises(ToolError):
+        env.call("set_mode", {"mode": "warp", "value": 1})
+    with pytest.raises(ToolError, match="unknown"):
+        env.call("set_speed_pi", {"kd": 1})
+    env.call("set_mode", {"mode": "current", "value": env.motor.i_max / 4})
+    env.call("run", {"ms": 50})
+    with pytest.raises(ToolError, match="standstill"):
+        env.call("lock_shaft", {"locked": True})

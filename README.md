@@ -17,8 +17,8 @@ watched live while the model works.
 
 [![tests](https://github.com/takzen/margin-bench/actions/workflows/tests.yml/badge.svg)](https://github.com/takzen/margin-bench/actions/workflows/tests.yml)
 
-**Status:** three environments, `process.tank_level`, `process.inline_heater` and `dsp.scale_readout`.
-More plants are on the way: a DC motor, an inverted pendulum, a circuit with a fault.
+**Status:** four environments, `process.tank_level`, `process.inline_heater`, `control.dc_motor` and
+`dsp.scale_readout`. Two more are on the way: an inverted pendulum and a circuit with a fault.
 No model has been run yet; the site shows the scripted agents.
 
 ## How an environment works
@@ -112,6 +112,37 @@ the test reaches, with Kc and Ti at the corners and centre of 0.7..1.4; 10 % sla
 75 % flow with a step test, tunes SIMC PI, checks the setpoint step and the flow cut, and passes every
 seed. `factory` (the factory tuning, meant for a short pipe), `no_feedforward` (the same careful SIMC PI
 without feedforward) and `lag_only` (tuned on the heater lag, ignoring the delay) fail every seed.
+
+### `control.dc_motor`: commission a cascade speed drive
+
+A permanent-magnet DC motor on a test bench with a dynamometer. A bridge on a 24, 36 or 48 V supply makes
+the armature voltage. The inner PI loop at 10 kHz controls the current, with one sample of computation
+delay; the outer PI loop at 1 kHz controls the speed from a 1024-line encoder and hands the inner loop a
+current reference limited to the drive's rated current. Above 1.5 times that current the drive trips.
+Resistance, inductance, torque constant and inertia are hidden.
+
+Tools: `set_mode(mode, value)` (off, voltage, current or speed), `set_current_pi(kp, ki)`,
+`set_speed_pi(kp, ki, anti_windup, filter_ms)`, `set_load(torque_nm)`, `lock_shaft(locked)`,
+`run(ms)` (the measured speed, current and voltage at up to 10 kHz) and `submit()`. 30 s of motor time,
+40 tool calls. A careless voltage on a motor at rest draws the locked-rotor current and trips the drive,
+which counts against the model.
+
+The acceptance test starts from rest, steps the speed reference to 60 % of the no-load speed (the
+start-up runs into the current limit), then puts half the rated torque on the dynamometer and takes
+it off. Requirements: no trip, settling into ±1 % within a time limit, a maximum overshoot, a maximum
+speed error on the load steps, and recovery into the band within a time limit.
+
+**Difficulty rule.** The limits are the worst result over a family of textbook cascades on the true
+motor: current PI by pole cancellation at 1/20 of the current loop's sample rate, speed PI at a tenth of
+that with its integral zero four times lower and a speed filter, anti-windup on, the speed gains at the
+corners and centre of 0.7..1.4; 15 % slack (at least 5 ms and 5 rpm).
+
+**Scripted agents**, checked on 20 seeds: `reference` measures R and L with the shaft locked and a 5 %
+voltage step, tunes the current loop by pole cancellation, measures the acceleration at a fixed current
+for J/Kt, tunes the speed loop, checks the start-up and the load steps, and passes every seed. `factory`
+(soft factory gains) and `voltage_bump` (full voltage on the motor at rest, then the textbook gains)
+fail every seed. `no_antiwindup`, shown on the site, fails on all but the lightest rotors, whose
+start-up is too short to wind the integral up.
 
 ### `dsp.scale_readout`: make a weighing scale read right
 
