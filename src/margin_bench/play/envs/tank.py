@@ -26,12 +26,13 @@ from __future__ import annotations
 
 import math
 from collections import deque
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from typing import Any
 
 from margin_bench.core import Score
 from margin_bench import scoring
 from margin_bench.play.env import ToolError, tool
+from margin_bench.play.pid import Pid, Tuning
 from margin_bench.rng import SeededRandom
 
 DT = 0.1  # s, integration step
@@ -72,73 +73,7 @@ class Plant:
         return 100.0 * self.c_out * outlet / 100.0 * math.sqrt(level) / self.q_max
 
 
-@dataclass
-class Tuning:
-    kc: float = 0.5
-    ti_s: float = 300.0  # 0 disables integral action
-    td_s: float = 0.0
-    pv_filter_s: float = 0.0
-    anti_windup: bool = False
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "kc": self.kc,
-            "ti_s": self.ti_s,
-            "td_s": self.td_s,
-            "pv_filter_s": self.pv_filter_s,
-            "anti_windup": self.anti_windup,
-        }
-
-
 FACTORY_TUNING = Tuning()
-
-
-@dataclass
-class Pid:
-    """Ideal-form PID in percent of span; derivative on the measurement."""
-
-    tuning: Tuning = field(default_factory=Tuning)
-    auto: bool = False
-    sp: float = SP  # m
-    out: float = 0.0  # %
-    integ: float = 0.0
-    pv_f: float | None = None
-    pv_prev: float | None = None
-    d: float = 0.0
-
-    def _p(self) -> float:
-        return self.tuning.kc * (100.0 * self.sp / SPAN - (self.pv_f or 0.0))
-
-    def bumpless(self) -> None:
-        self.integ = self.out - self._p() - self.d
-
-    def sample(self, pv: float) -> float:
-        t = self.tuning
-        if self.pv_f is None or t.pv_filter_s <= 0:
-            self.pv_f = pv
-        else:
-            self.pv_f += TS / (t.pv_filter_s + TS) * (pv - self.pv_f)
-        if self.pv_prev is None:
-            self.pv_prev = self.pv_f
-        if not self.auto:
-            self.pv_prev, self.d = self.pv_f, 0.0
-            return self.out
-        e = 100.0 * self.sp / SPAN - self.pv_f
-        if t.td_s > 0:
-            raw = -t.kc * t.td_s * (self.pv_f - self.pv_prev) / TS
-            tf = t.td_s / 10.0
-            self.d += TS / (tf + TS) * (raw - self.d)
-        else:
-            self.d = 0.0
-        self.pv_prev = self.pv_f
-        p = t.kc * e
-        if t.ti_s > 0:
-            di = t.kc * TS / t.ti_s * e
-            trial = p + self.integ + di + self.d
-            if not (t.anti_windup and ((trial > 100.0 and di > 0) or (trial < 0.0 and di < 0))):
-                self.integ += di
-        self.out = min(100.0, max(0.0, p + self.integ + self.d))
-        return self.out
 
 
 class Sim:
@@ -150,7 +85,7 @@ class Sim:
         self.h = level
         self.outlet = outlet
         self.valve = plant.valve_for(level, outlet)  # actual position, %
-        self.pid = Pid(tuning=replace(tuning), out=self.valve)
+        self.pid = Pid(span=SPAN, ts=TS, tuning=replace(tuning), sp=SP, out=self.valve)
         self.pid.pv_f = self.pid.pv_prev = 100.0 * level / SPAN
         self.buf: deque[float] = deque([level] * (round(plant.delay / DT) + 1), maxlen=round(plant.delay / DT) + 1)
         self.rng = SeededRandom(noise_seed)
@@ -205,17 +140,10 @@ class Sim:
         self.pid.out = valve
 
     def set_auto(self, sp: float) -> None:
-        self.pid.sp = sp
-        if not self.pid.auto:
-            # The integral term starts from the current output, so the
-            # proportional term acts at once on any setpoint error.
-            self.pid.auto = True
-            self.pid.integ, self.pid.d = self.pid.out, 0.0
+        self.pid.set_auto(sp)
 
     def set_tuning(self, tuning: Tuning) -> None:
-        self.pid.tuning = tuning
-        if self.pid.auto:
-            self.pid.bumpless()
+        self.pid.set_tuning(tuning)
 
 
 FRAME_COLUMNS = ["t_s", "level_m", "measured_m", "output_pct", "valve_pct", "outlet_pct", "setpoint_m"]

@@ -17,8 +17,8 @@ watched live while the model works.
 
 [![tests](https://github.com/takzen/margin-bench/actions/workflows/tests.yml/badge.svg)](https://github.com/takzen/margin-bench/actions/workflows/tests.yml)
 
-**Status:** two environments, `process.tank_level` and `dsp.scale_readout`. More plants are on the way:
-an inline heater with a long transport delay, a DC motor, an inverted pendulum, a circuit with a fault.
+**Status:** three environments, `process.tank_level`, `process.inline_heater` and `dsp.scale_readout`.
+More plants are on the way: a DC motor, an inverted pendulum, a circuit with a fault.
 No model has been run yet; the site shows the scripted agents.
 
 ## How an environment works
@@ -81,6 +81,37 @@ about 40 % of SIMC passes once anti-windup is on.
 * `factory` submits the factory tuning without commissioning. It fails every seed.
 * `aggressive` runs the same step test but tunes Ziegler-Nichols PI without anti-windup. The start-up
   saturates the valve, the integral winds up and the level overshoots by 30 to 40 cm. It fails every seed.
+
+### `process.inline_heater`: hold a temperature at the end of a long pipe
+
+Liquid flows through an electric heater and then through a long pipe to the point of use, where the
+temperature transmitter sits. The pipe's transport delay (40 to 150 s at nominal flow) dominates the
+dynamics, and it is not fixed: at lower flow the delay, the heater's time constant and the gain all grow.
+The heater power comes from the same PID block as the tank, with two options: a Smith predictor (model
+gain, time constant and dead time) and flow feedforward (power scaled by the measured flow).
+
+Tools: `set_manual(power_percent)`, `set_auto(setpoint_c)`, `set_tuning(...)` including the predictor and
+feedforward, `set_flow(percent)` (operations allow 60 to 130 %), `wait(seconds, sample_s)` and `submit()`.
+Six hours of plant time, 40 tool calls; the outlet must never reach 110 °C.
+
+The acceptance test runs steady at a setpoint, steps it up by 10 °C, drops the inlet temperature by 5 to
+8 °C, then cuts the flow to 75 %. Requirements: never more than 3 °C above the setpoint, inside ±0.5 °C
+within a time limit after the step and back in the band within limits after each disturbance, and a
+limit on power travel.
+
+A flow cut at constant power raises the outlet by a third of the heating rise, and the transmitter only
+sees it one pipe delay later, so no PID tuning alone holds 3 °C: the plant asks for flow feedforward. The
+model has to work that out.
+
+**Difficulty rule.** The limits are the worst result over a family of designs on the true plant: flow
+feedforward on, SIMC PI (tc equal to the effective delay) for the plant at 75 % flow, the slowest case
+the test reaches, with Kc and Ti at the corners and centre of 0.7..1.4; 10 % slack on times (at least
+60 s), 50 % on power travel.
+
+**Scripted agents**, checked on 20 seeds: `reference` switches on feedforward, identifies the plant at
+75 % flow with a step test, tunes SIMC PI, checks the setpoint step and the flow cut, and passes every
+seed. `factory` (the factory tuning, meant for a short pipe), `no_feedforward` (the same careful SIMC PI
+without feedforward) and `lag_only` (tuned on the heater lag, ignoring the delay) fail every seed.
 
 ### `dsp.scale_readout`: make a weighing scale read right
 
@@ -174,6 +205,7 @@ author, who works in these fields; and full transcripts are published with the r
 src/margin_bench/
   play/          environments, the tool-calling loop, episode records, local viewer
   play/envs/     one module per plant: simulation, tools, acceptance test, scripted agents
+  play/pid.py    the PID block shared by the process plants (Smith predictor, anti-windup)
   harness/       OpenRouter / OpenAI-compatible client, secrets from .env
   sims/          ngspice through its shared library (for the electronics plants)
   core.py        Score

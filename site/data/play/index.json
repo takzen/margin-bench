@@ -109,6 +109,114 @@
    "started_at": "2026-10-16T06:09:49+00:00"
   },
   {
+   "id": "heater-reference-s0",
+   "env": {
+    "id": "process.inline_heater",
+    "title": "Inline heater with a long pipe",
+    "domain": "control",
+    "seed": 0
+   },
+   "agent": {
+    "kind": "scripted",
+    "name": "reference"
+   },
+   "status": "done",
+   "score": 1.0,
+   "passed": true,
+   "wall_s": 0.51,
+   "model_s": 0.0,
+   "usage": {
+    "model_calls": 0,
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "reasoning_tokens": 0,
+    "cost_usd": 0.0
+   },
+   "tool_calls": 17,
+   "started_at": "2026-10-16T16:16:34+00:00"
+  },
+  {
+   "id": "heater-factory-s0",
+   "env": {
+    "id": "process.inline_heater",
+    "title": "Inline heater with a long pipe",
+    "domain": "control",
+    "seed": 0
+   },
+   "agent": {
+    "kind": "scripted",
+    "name": "factory"
+   },
+   "status": "done",
+   "score": 0.0,
+   "passed": false,
+   "wall_s": 0.05,
+   "model_s": 0.0,
+   "usage": {
+    "model_calls": 0,
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "reasoning_tokens": 0,
+    "cost_usd": 0.0
+   },
+   "tool_calls": 1,
+   "started_at": "2026-10-16T16:16:36+00:00"
+  },
+  {
+   "id": "heater-lag_only-s0",
+   "env": {
+    "id": "process.inline_heater",
+    "title": "Inline heater with a long pipe",
+    "domain": "control",
+    "seed": 0
+   },
+   "agent": {
+    "kind": "scripted",
+    "name": "lag_only"
+   },
+   "status": "done",
+   "score": 0.0,
+   "passed": false,
+   "wall_s": 0.14,
+   "model_s": 0.0,
+   "usage": {
+    "model_calls": 0,
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "reasoning_tokens": 0,
+    "cost_usd": 0.0
+   },
+   "tool_calls": 9,
+   "started_at": "2026-10-16T16:16:40+00:00"
+  },
+  {
+   "id": "heater-no_feedforward-s0",
+   "env": {
+    "id": "process.inline_heater",
+    "title": "Inline heater with a long pipe",
+    "domain": "control",
+    "seed": 0
+   },
+   "agent": {
+    "kind": "scripted",
+    "name": "no_feedforward"
+   },
+   "status": "done",
+   "score": 0.0,
+   "passed": false,
+   "wall_s": 0.3,
+   "model_s": 0.0,
+   "usage": {
+    "model_calls": 0,
+    "prompt_tokens": 0,
+    "completion_tokens": 0,
+    "reasoning_tokens": 0,
+    "cost_usd": 0.0
+   },
+   "tool_calls": 12,
+   "started_at": "2026-10-16T16:16:38+00:00"
+  },
+  {
    "id": "tank-reference-s0",
    "env": {
     "id": "process.tank_level",

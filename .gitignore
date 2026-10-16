@@ -21,3 +21,4 @@ private/
 # Local assistant notes - never public
 CLAUDE.md
 .claude/
+priv/

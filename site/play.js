@@ -332,7 +332,134 @@ const scaleScene = {
   },
 };
 
-const SCENES = { tank: tankScene, scale: scaleScene };
+// ---------- scene: inline heater with a long pipe ----------
+
+const PIPE_PTS = [[200, 70], [520, 70], [520, 150], [40, 150], [40, 230], [440, 230]];
+const PIPE_SEGS = 72;
+
+function pipePoints() {
+  // Evenly spaced points along the serpentine, from the heater outlet (0) to the sensor (1).
+  const lens = PIPE_PTS.slice(1).map((p, i) => Math.hypot(p[0] - PIPE_PTS[i][0], p[1] - PIPE_PTS[i][1]));
+  const total = lens.reduce((a, b) => a + b, 0);
+  const pts = [];
+  for (let k = 0; k <= PIPE_SEGS; k++) {
+    let d = (k / PIPE_SEGS) * total, i = 0;
+    while (i < lens.length - 1 && d > lens[i]) d -= lens[i++];
+    const [a, b] = [PIPE_PTS[i], PIPE_PTS[i + 1]], w = Math.min(1, d / lens[i]);
+    pts.push([a[0] + w * (b[0] - a[0]), a[1] + w * (b[1] - a[1])]);
+  }
+  return pts;
+}
+
+function tempColor(t, lo, hi) {
+  const w = Math.min(1, Math.max(0, (t - lo) / (hi - lo)));
+  const c0 = [63, 143, 220], c1 = [226, 85, 63];
+  return `rgb(${c0.map((v, i) => Math.round(v + w * (c1[i] - v))).join(",")})`;
+}
+
+// Heater outlet temperature that sits at fraction x along the pipe at frame time t.
+function pipeTemp(rows, t, x, volume) {
+  const now = rowAt(rows, t), target = now[8] - x * volume;
+  if (target <= rows[0][8]) return rows[0][7];
+  let lo = 0, hi = rows.length - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (rows[mid][8] <= target) lo = mid; else hi = mid;
+  }
+  const a = rows[lo], b = rows[hi], w = (target - a[8]) / (b[8] - a[8] || 1);
+  return a[7] + Math.min(1, Math.max(0, w)) * (b[7] - a[7]);
+}
+
+const heaterScene = {
+  build(svg, scene) {
+    const sc = { pts: pipePoints() };
+    const d = PIPE_PTS.map((p, i) => `${i ? "L" : "M"}${p[0]} ${p[1]}`).join("");
+    el("path", { d: "M0 70 H120", stroke: "var(--pipe)", "stroke-width": 13, fill: "none" }, svg);
+    sc.inlet = el("path", { d: "M0 70 H120", stroke: "rgb(63,143,220)", "stroke-width": 7, fill: "none" }, svg);
+    el("path", { d, stroke: "var(--pipe)", "stroke-width": 13, fill: "none", "stroke-linejoin": "round" }, svg);
+    sc.segs = [];
+    for (let k = 0; k < PIPE_SEGS; k++) {
+      const [a, b] = [sc.pts[k], sc.pts[k + 1]];
+      sc.segs.push(el("line", { x1: a[0], y1: a[1], x2: b[0], y2: b[1], "stroke-width": 7, "stroke-linecap": "round" }, svg));
+    }
+    sc.flowDash = el("path", { d, stroke: "rgba(255,255,255,0.55)", "stroke-width": 2, fill: "none", "stroke-dasharray": "4 14", "stroke-linejoin": "round" }, svg);
+    el("path", { d: "M440 230 H540", stroke: "var(--pipe)", "stroke-width": 13, fill: "none" }, svg);
+    sc.outlet = el("path", { d: "M452 230 H540", stroke: "rgb(63,143,220)", "stroke-width": 7, fill: "none" }, svg);
+    txt(svg, 540, 254, "to process", { "text-anchor": "end" });
+    // heater
+    sc.heaterBox = el("rect", { x: 120, y: 44, width: 80, height: 52, rx: 6, stroke: "var(--ink-2)", "stroke-width": 1.5 }, svg);
+    el("path", { d: "M128 70 l6 -12 l8 24 l8 -24 l8 24 l8 -24 l8 24 l8 -24 l6 12", stroke: "var(--ink)", "stroke-width": 1.6, fill: "none", opacity: 0.7 }, svg);
+    txt(svg, 160, 36, "EH-101", { "text-anchor": "middle", class: "tag" });
+    sc.powerText = el("text", { x: 160, y: 114, "text-anchor": "middle" }, svg);
+    txt(svg, 4, 52, "inlet", { class: "tag" });
+    sc.inText = el("text", { x: 4, y: 96 }, svg);
+    sc.flowText = el("text", { x: 4, y: 112 }, svg);
+    // transmitter
+    el("line", { x1: 470, y1: 230, x2: 470, y2: 262, stroke: "var(--steel)", "stroke-width": 2 }, svg);
+    el("circle", { cx: 470, cy: 278, r: 16, fill: "var(--surface)", stroke: "var(--ink-2)", "stroke-width": 1.5 }, svg);
+    txt(svg, 470, 282, "TT", { "text-anchor": "middle", class: "tag" });
+    sc.ttText = el("text", { x: 448, y: 276, "text-anchor": "end", fill: "var(--ink)" }, svg);
+    sc.trueText = el("text", { x: 448, y: 292, "text-anchor": "end" }, svg);
+    // controller
+    el("path", { d: "M470 294 V392 H210 V350", fill: "none", stroke: "var(--signal)", "stroke-width": 1.2, "stroke-dasharray": "5 4" }, svg);
+    el("path", { d: "M106 270 V84 H120", fill: "none", stroke: "var(--signal)", "stroke-width": 1.2, "stroke-dasharray": "5 4" }, svg);
+    el("rect", { x: 10, y: 270, width: 200, height: 124, rx: 8, fill: "var(--surface)", stroke: "var(--ink-2)", "stroke-width": 1.2 }, svg);
+    txt(svg, 20, 288, "TIC-101", { class: "tag" });
+    sc.modeBg = el("rect", { x: 150, y: 277, width: 52, height: 16, rx: 4 }, svg);
+    sc.mode = el("text", { x: 176, y: 289, "text-anchor": "middle", class: "tag" }, svg);
+    sc.fp = {};
+    [["SP", 20, 306], ["PV", 20, 322], ["OUT", 20, 338], ["Kc", 112, 306], ["Ti", 112, 322], ["Smith", 112, 338], ["flow FF", 20, 360], ["AW", 112, 360]].forEach(([k, x, y]) => {
+      txt(svg, x, y, k);
+      sc.fp[k] = el("text", { x: x + 88, y, "text-anchor": "end", fill: "var(--ink)" }, svg);
+    });
+    // colour key
+    const lo = scene.t_cold, hi = scene.t_hot;
+    for (let i = 0; i < 20; i++) el("rect", { x: 250 + i * 9, y: 352, width: 9, height: 8, fill: tempColor(lo + ((hi - lo) * i) / 19, lo, hi) }, svg);
+    txt(svg, 250, 376, `${lo.toFixed(0)} °C`);
+    txt(svg, 430, 376, `${hi.toFixed(0)} °C`, { "text-anchor": "end" });
+    txt(svg, 250, 344, "fluid temperature along the pipe", { class: "tag" });
+    sc.dash = 0;
+    return sc;
+  },
+  draw(sc, scene, row, phase, dt) {
+    const [t, outT, meas, power, sp, flow, tin] = row;
+    const lo = scene.t_cold, hi = scene.t_hot, rows = phase.rows;
+    for (let k = 0; k < PIPE_SEGS; k++) {
+      const temp = pipeTemp(rows, t, (k + 0.5) / PIPE_SEGS, scene.pipe_volume);
+      sc.segs[k].setAttribute("stroke", tempColor(temp, lo, hi));
+    }
+    sc.inlet.setAttribute("stroke", tempColor(tin, lo, hi));
+    sc.outlet.setAttribute("stroke", tempColor(outT, lo, hi));
+    sc.dash -= dt * 40 * (flow / 100);
+    sc.flowDash.setAttribute("stroke-dashoffset", sc.dash);
+    sc.heaterBox.setAttribute("fill", `rgba(240,120,40,${(0.1 + 0.75 * Math.min(1, power / 100)).toFixed(2)})`);
+    sc.powerText.textContent = `power ${power.toFixed(1)} %`;
+    sc.inText.textContent = `${tin.toFixed(1)} °C`;
+    sc.flowText.textContent = `flow ${flow.toFixed(0)} %`;
+    sc.ttText.textContent = `TT ${meas.toFixed(2)} °C`;
+    sc.trueText.textContent = `true ${outT.toFixed(2)} °C`;
+    const auto = isNum(sp);
+    sc.mode.textContent = auto ? "AUTO" : "MAN";
+    sc.modeBg.setAttribute("fill", auto ? "var(--good-wash)" : "var(--warn-wash)");
+    sc.mode.setAttribute("fill", auto ? "var(--good-ink)" : "var(--warn-ink)");
+    let tu = scene.final_tuning;
+    if (phase.key !== "acceptance") {
+      const s = latestStep((st) => st.kind === "tool" && st.result && st.result.tuning);
+      tu = s ? s.result.tuning : (S.ep.steps.find((st) => st.result && st.result.tuning) || {}).result?.tuning || {};
+    }
+    const f = sc.fp;
+    f.SP.textContent = auto ? `${sp.toFixed(1)} °C` : "–";
+    f.PV.textContent = `${meas.toFixed(2)} °C`;
+    f.OUT.textContent = `${power.toFixed(1)} %`;
+    f.Kc.textContent = fx(tu.kc, 3);
+    f.Ti.textContent = isNum(tu.ti_s) ? (tu.ti_s > 0 ? `${tu.ti_s.toFixed(0)} s` : "off") : "–";
+    f.Smith.textContent = tu.smith_gain > 0 ? `${tu.smith_delay_s.toFixed(0)} s` : "off";
+    f["flow FF"].textContent = tu.flow_feedforward == null ? "–" : tu.flow_feedforward ? "on" : "off";
+    f.AW.textContent = tu.anti_windup == null ? "–" : tu.anti_windup ? "on" : "off";
+  },
+};
+
+const SCENES = { tank: tankScene, scale: scaleScene, heater: heaterScene };
 
 function buildScene() {
   const svg = $("scene");

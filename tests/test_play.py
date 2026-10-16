@@ -259,3 +259,42 @@ def test_scale_display_follows_the_chain_output():
     env.call("set_load", {"kg": 30})
     r = env.call("run", {"seconds": 5})
     assert r["readings"]["rows"][-1][1] == pytest.approx(30, abs=0.3)
+
+
+# --- process.inline_heater ---
+
+HEATER = "process.inline_heater"
+
+
+def test_heater_flow_drop_heats_up_without_feedforward_and_not_with_it():
+    for ff in (False, True):
+        env = make(HEATER, 2)
+        if ff:
+            env.call("set_tuning", {"flow_feedforward": True})
+        before = env.call("wait", {"seconds": 600})["temp_c"]
+        env.call("set_flow", {"percent": 75})
+        after = env.call("wait", {"seconds": 3000})["temp_c"]
+        rise = env.plant.gain_c * env.scenario.commission_power / 100 * (1 / 0.75 - 1)
+        if ff:
+            assert after == pytest.approx(before, abs=0.3)
+        else:
+            assert after - before == pytest.approx(rise, rel=0.05)
+
+
+def test_heater_feedforward_switch_keeps_power():
+    env = make(HEATER, 0)
+    env.call("set_flow", {"percent": 80})
+    p0 = env.call("wait", {"seconds": 10})["power_pct"]
+    r = env.call("set_tuning", {"flow_feedforward": True})
+    assert r["power_pct"] == pytest.approx(p0, abs=0.01)
+    assert r["output_pct"] == pytest.approx(p0 / 0.8, abs=0.01)
+
+
+def test_heater_refusals():
+    env = make(HEATER, 0)
+    with pytest.raises(ToolError):
+        env.call("set_flow", {"percent": 30})
+    with pytest.raises(ToolError, match="unknown"):
+        env.call("set_tuning", {"kd": 3})
+    with pytest.raises(ToolError):
+        env.call("set_tuning", {"flow_feedforward": "yes"})
