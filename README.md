@@ -17,8 +17,8 @@ watched live while the model works.
 
 [![tests](https://github.com/takzen/margin-bench/actions/workflows/tests.yml/badge.svg)](https://github.com/takzen/margin-bench/actions/workflows/tests.yml)
 
-**Status:** five environments, `process.tank_level`, `process.inline_heater`, `control.dc_motor`,
-`control.cart_pendulum` and `dsp.scale_readout`. One more is on the way: a circuit with a fault.
+**Status:** six environments: `process.tank_level`, `process.inline_heater`, `control.dc_motor`,
+`control.cart_pendulum`, `dsp.scale_readout` and `electronics.fault_finding`.
 No model has been run yet; the site shows the scripted agents.
 
 ## How an environment works
@@ -209,9 +209,30 @@ builds that textbook chain, checks it with a 20 kg weight and passes every seed.
 fail every seed. Sensible alternatives also pass, for example a notch on the mains fundamental followed
 by a lowpass at the right cut-off.
 
+### `electronics.fault_finding`: repair an amplifier
+
+A common-emitter amplifier (NPN transistor, divider bias, bypassed emitter resistor, coupling capacitors,
+a load) came back from the field. Exactly one part is faulty: a resistor open, shorted or ten times its
+value, a capacitor open or shorted, or the transistor with an open junction or a collector-emitter
+short. The schematic and the marked values are in the prompt; real parts are within 1 % of them.
+ngspice simulates the board for every measurement.
+
+Tools: `measure_dc(node)` (multimeter, 1 mV), `measure_gain(frequency_hz)` (generator and scope),
+`test_part(part)` (lifted out and tested on its own), `replace_part(part)` and `submit()`; 40 tool calls.
+
+The board passes when it meets its spec (collector voltage and gain at 1 kHz within 10 % of the design)
+and no good part was replaced; each needless replacement halves the score. Every fault in the list was
+checked to break the spec.
+
+**Scripted agents**, checked on 20 seeds: `reference` measures the bias voltages and the gain, compares
+them with what each possible fault would do, confirms the best match on the lifted part, replaces it and
+passes every seed. `no_fix` and `shotgun` (replace every part) fail every seed.
+
 ## Running a model
 
-Requires Python 3.12 and [uv](https://docs.astral.sh/uv/).
+Requires Python 3.12 and [uv](https://docs.astral.sh/uv/). The electronics plant needs the ngspice shared
+library: on Windows the copy bundled with KiCad is found automatically; elsewhere install it
+(`apt install libngspice0` on Debian/Ubuntu) or set `NGSPICE_PATH`.
 
 ```sh
 uv sync
@@ -265,7 +286,7 @@ src/margin_bench/
   play/envs/     one module per plant: simulation, tools, acceptance test, scripted agents
   play/pid.py    the PID block shared by the process plants (Smith predictor, anti-windup)
   harness/       OpenRouter / OpenAI-compatible client, secrets from .env
-  sims/          ngspice through its shared library (for the electronics plants)
+  sims/          ngspice through its shared library (for the electronics plant)
   core.py        Score
   rng.py         seeded randomness that stays reproducible across versions
   scoring.py     requirement ratios

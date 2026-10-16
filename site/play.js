@@ -637,7 +637,92 @@ const pendulumScene = {
   },
 };
 
-const SCENES = { tank: tankScene, scale: scaleScene, heater: heaterScene, motor: motorScene, pendulum: pendulumScene };
+// ---------- scene: amplifier with a fault ----------
+
+const circuitScene = {
+  build(svg, scene) {
+    const sc = { parts: {}, nodes: {} };
+    const wire = (d) => el("path", { d, fill: "none", stroke: "var(--ink-2)", "stroke-width": 1.6 }, svg);
+    const res = (name, x, y, vertical) => {
+      const g = el("g", {}, svg);
+      const r = vertical ? el("rect", { x: x - 8, y: y - 24, width: 16, height: 48, rx: 2, fill: "var(--surface)", "stroke-width": 1.8 }, g)
+        : el("rect", { x: x - 24, y: y - 8, width: 48, height: 16, rx: 2, fill: "var(--surface)", "stroke-width": 1.8 }, g);
+      const lab = txt(svg, vertical ? x + 14 : x, vertical ? y - 4 : y - 14, name, { class: "tag", "text-anchor": vertical ? "start" : "middle" });
+      txt(svg, vertical ? x + 14 : x, vertical ? y + 10 : y + 26, scene.nominal[name], { "text-anchor": vertical ? "start" : "middle" });
+      const note = txt(svg, vertical ? x + 14 : x, vertical ? y + 24 : y + 40, "", { "text-anchor": vertical ? "start" : "middle" });
+      sc.parts[name] = { shape: r, lab, note };
+    };
+    const cap = (name, x, y, vertical) => {
+      const g = el("g", {}, svg);
+      const plates = vertical
+        ? [el("line", { x1: x - 12, x2: x + 12, y1: y - 4, y2: y - 4, "stroke-width": 3 }, g), el("line", { x1: x - 12, x2: x + 12, y1: y + 4, y2: y + 4, "stroke-width": 3 }, g)]
+        : [el("line", { x1: x - 4, x2: x - 4, y1: y - 12, y2: y + 12, "stroke-width": 3 }, g), el("line", { x1: x + 4, x2: x + 4, y1: y - 12, y2: y + 12, "stroke-width": 3 }, g)];
+      const lab = txt(svg, vertical ? x + 16 : x, vertical ? y - 2 : y - 18, name, { class: "tag", "text-anchor": vertical ? "start" : "middle" });
+      txt(svg, vertical ? x + 16 : x, vertical ? y + 12 : y + 28, scene.nominal[name], { "text-anchor": vertical ? "start" : "middle" });
+      const note = txt(svg, vertical ? x + 16 : x, vertical ? y + 26 : y + 42, "", { "text-anchor": vertical ? "start" : "middle" });
+      sc.parts[name] = { shape: plates, lab, note };
+    };
+    // rails
+    wire("M60 40 H460"); wire("M30 360 H460");
+    txt(svg, 60, 30, `VCC ${scene.vcc} V`, { class: "tag" });
+    for (let x = 30; x <= 460; x += 430) el("path", { d: `M${x} 360 v6 m-8 0 h16 m-12 4 h8`, stroke: "var(--ink-2)", fill: "none" }, svg);
+    // bias divider and base
+    wire("M150 40 V86"); res("R1", 150, 110, true); wire("M150 134 V226"); res("R2", 150, 250, true); wire("M150 274 V360");
+    wire("M150 180 H232");
+    wire("M30 180 H83"); cap("Cin", 87, 180, false); wire("M91 180 H150");
+    el("circle", { cx: 30, cy: 214, r: 14, fill: "none", stroke: "var(--ink-2)", "stroke-width": 1.6 }, svg);
+    el("path", { d: "M22 214 q4 -8 8 0 t8 0", fill: "none", stroke: "var(--ink-2)", "stroke-width": 1.4 }, svg);
+    wire("M30 180 V200"); wire("M30 228 V360");
+    // transistor
+    sc.parts.Q1 = { shape: [el("line", { x1: 236, x2: 236, y1: 158, y2: 202, "stroke-width": 4 }, svg)], lab: txt(svg, 196, 152, "Q1", { class: "tag" }), note: txt(svg, 300, 206, "", {}) };
+    sc.parts.Q1.shape.push(el("path", { d: "M236 170 L275 148 V120", fill: "none", "stroke-width": 1.8 }, svg));
+    sc.parts.Q1.shape.push(el("path", { d: "M236 190 L275 212 V250", fill: "none", "stroke-width": 1.8 }, svg));
+    el("polygon", { points: "268,203 275,212 263,212", fill: "var(--ink-2)" }, svg);
+    // collector and emitter
+    wire("M275 40 V62"); res("RC", 275, 86, true); wire("M275 110 V120");
+    res("RE", 275, 290, true); wire("M275 314 V360");
+    wire("M275 250 V266"); wire("M275 250 H360 V276"); cap("CE", 360, 280, true); wire("M360 284 V360");
+    // output
+    wire("M275 120 H340"); cap("Cout", 344, 120, false); wire("M348 120 H440 V226"); res("RL", 440, 250, true); wire("M440 274 V360");
+    // node badges
+    const badge = (node, x, y) => {
+      el("circle", { cx: x, cy: y, r: 3.5, fill: "var(--ink)" }, svg);
+      sc.nodes[node] = txt(svg, x + 6, y - 6, "", { class: "tag", fill: "var(--curve)" });
+    };
+    badge("vcc", 460, 40); badge("b", 150, 180); badge("c", 275, 120); badge("e", 275, 250); badge("out", 440, 120); badge("in", 30, 180);
+    sc.gain = txt(svg, 330, 30, "", { class: "tag" });
+    sc.verdict = txt(svg, 480, 390, "", { class: "tag", "text-anchor": "end" });
+    return sc;
+  },
+  draw(sc, scene, row, phase) {
+    // latest measurements up to the current step
+    const meas = {}, tests = {}, replaced = new Set();
+    let gain = null;
+    const upto = Math.min(S.cur, S.ep.steps.length - 1);
+    for (let i = 0; i <= upto; i++) {
+      const s = S.ep.steps[i];
+      if (s.kind !== "tool" || s.error) continue;
+      if (s.name === "measure_dc") meas[s.result.node] = s.result.volts;
+      if (s.name === "measure_gain") gain = s.result;
+      if (s.name === "test_part") tests[s.result.part] = s.summary.split(": ").slice(1).join(": ") || s.summary;
+      if (s.name === "replace_part") replaced.add(s.result.part);
+    }
+    for (const [node, t] of Object.entries(sc.nodes)) t.textContent = node in meas ? `${node} ${meas[node].toFixed(3)} V` : "";
+    sc.gain.textContent = gain ? `gain at ${gain.frequency_hz} Hz: ${gain.gain.toFixed(2)}` : "";
+    const fault = phase.key === "acceptance" && scene.fault ? scene.fault[0] : null;
+    for (const [name, p] of Object.entries(sc.parts)) {
+      const color = name === fault ? "var(--critical)" : replaced.has(name) ? "var(--good)" : name in tests ? "var(--output)" : "var(--ink-2)";
+      for (const sh of [].concat(p.shape)) sh.setAttribute("stroke", color);
+      p.lab.setAttribute("fill", color === "var(--ink-2)" ? "var(--ink)" : color);
+      p.note.textContent = name === fault ? `fault: ${scene.fault[1].replace("_", " ")}${replaced.has(name) ? ", replaced" : ""}`
+        : replaced.has(name) ? "replaced" : name in tests ? tests[name] : "";
+    }
+    sc.verdict.textContent = phase.key === "acceptance" ? (S.ep.result && S.ep.result.passed ? "board repaired" : "board not repaired") : "";
+    sc.verdict.setAttribute("fill", S.ep.result && S.ep.result.passed ? "var(--good-ink)" : "var(--critical)");
+  },
+};
+
+const SCENES = { tank: tankScene, scale: scaleScene, heater: heaterScene, motor: motorScene, pendulum: pendulumScene, circuit: circuitScene };
 
 function buildScene() {
   const svg = $("scene");
@@ -704,7 +789,8 @@ function buildChart(p) {
   const step = niceStep(p.dur, 8);
   for (let t = 0; t <= p.dur + 1e-9; t += step) {
     el("line", { x1: xs(t), x2: xs(t), y1: yBot, y2: yBot + 5, stroke: "var(--axis)" }, grid);
-    txt(grid, xs(t), yBot + 18, p.dur < 60 ? `${+t.toFixed(2)} s` : clock(t), { "text-anchor": "middle" });
+    const tl = S.ep.view.time_unit === "step" ? `step ${+t.toFixed(0)}` : p.dur < 60 ? `${+t.toFixed(2)} s` : clock(t);
+    txt(grid, xs(t), yBot + 18, tl, { "text-anchor": "middle" });
   }
   for (const e of p.events || []) {
     el("line", { x1: xs(e.t_s), x2: xs(e.t_s), y1: yTop, y2: yBot, stroke: "var(--ink-2)", "stroke-width": 1 }, grid);
@@ -776,7 +862,7 @@ function renderLog() {
         isNum(s.cost_usd) ? usd(s.cost_usd) : null,
       ].filter(Boolean);
       const think = s.reasoning ? `<details><summary>Thinking${s.tokens && isNum(s.tokens.reasoning) ? ` (${int(s.tokens.reasoning)} tokens)` : ""}</summary><pre>${esc(s.reasoning)}</pre></details>` : "";
-      return `<li class="model" data-i="${i}"><div class="who"><b>${scripted ? "Scripted engineer" : "Model"}</b><span>plant ${clock(s.sim_t)}</span>${meta.map((m) => `<span>${esc(m)}</span>`).join("")}</div><div class="text">${esc((s.text || "").trim())}</div>${think}</li>`;
+      return `<li class="model" data-i="${i}"><div class="who"><b>${scripted ? "Scripted engineer" : "Model"}</b><span>${ep.view.time_unit === "step" ? `step ${Math.round(s.sim_t)}` : `plant ${clock(s.sim_t)}`}</span>${meta.map((m) => `<span>${esc(m)}</span>`).join("")}</div><div class="text">${esc((s.text || "").trim())}</div>${think}</li>`;
     }
     const data = s.result ? `<details><summary>Data returned to the model</summary><pre>${esc(JSON.stringify(s.result, null, 1))}</pre></details>` : "";
     return `<li class="tool" data-i="${i}"><div class="call"><span class="fn">${esc(s.name)}</span>(${esc(argText(s.args))})</div><div class="res${s.alert ? " err" : ""}">${esc(s.summary || s.error || "")}</div>${data}</li>`;
@@ -893,7 +979,7 @@ function render(dt) {
   drawChart(S.T);
   const { p, t } = phaseAt(S.T);
   $("phase").textContent = p.key === "acceptance" ? "Acceptance test: what the agent left, on a fresh start" : "Commissioning: the agent works on the plant";
-  $("clock").textContent = `${p.name.toLowerCase()} ${clock(t)} / ${clock(p.dur)}`;
+  $("clock").textContent = S.ep.view.time_unit === "step" ? `${p.name.toLowerCase()}: step ${Math.floor(t)} of ${p.dur}` : `${p.name.toLowerCase()} ${clock(t)} / ${clock(p.dur)}`;
   $("scrub").value = String(Math.round((1000 * S.T) / (S.total || 1)));
   markLog();
 }
@@ -939,7 +1025,7 @@ function adopt(ep) {
   S.chart = null;
   if (first) {
     buildScene();
-    const speed = [0.1, 0.25, 1, 5, 20, 60, 200].find((s) => S.total / s <= 120) || 200;
+    const speed = ep.view.speed || [0.1, 0.25, 1, 5, 20, 60, 200].find((s) => S.total / s <= 120) || 200;
     S.speed = speed;
     $("speed").value = String(speed);
   }

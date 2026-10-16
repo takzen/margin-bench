@@ -15,7 +15,9 @@ from margin_bench.play.env import ToolError
 from margin_bench.play.episode import Episode
 
 ENV = "process.tank_level"
-ENVS = sorted(SCRIPTED)
+_SPICE = __import__("margin_bench.sims.ngspice", fromlist=["available"]).available()
+# the electronics plants need the ngspice shared library; without it they are skipped
+ENVS = [e for e in sorted(SCRIPTED) if _SPICE or not e.startswith("electronics.")]
 SEEDS = range(20)
 
 
@@ -382,3 +384,46 @@ def test_pendulum_refusals():
     env.call("set_controller", {"on": True})
     with pytest.raises(ToolError, match="controller off"):
         env.call("set_force", {"newtons": 1})
+
+
+# --- electronics.fault_finding ---
+
+CIRCUIT = "electronics.fault_finding"
+needs_spice = pytest.mark.skipif(not __import__("margin_bench.sims.ngspice", fromlist=["available"]).available(),
+                                 reason="ngspice shared library not found")
+
+
+@needs_spice
+def test_every_fault_breaks_the_board_and_a_good_board_meets_spec():
+    from margin_bench.play.envs.circuit import FAULTS, SPEC_TOL, Board, design
+    from margin_bench.rng import SeededRandom
+
+    vcc, nom = design(SeededRandom(7))
+    good = Board(vcc=vcc, nominal=nom, actual=nom, fault=("none", "none"))
+    dc, g = good.dc(), good.gain()
+    assert 0.3 * vcc < dc["c"] < 0.8 * vcc and dc["b"] - dc["e"] == pytest.approx(0.65, abs=0.1) and g > 20
+    for f in FAULTS:
+        bad = Board(vcc=vcc, nominal=nom, actual=nom, fault=f)
+        d2, g2 = bad.dc(), bad.gain()
+        assert abs(d2["c"] - dc["c"]) > SPEC_TOL * dc["c"] or abs(g2 - g) > SPEC_TOL * g, f
+
+
+@needs_spice
+def test_replacing_the_right_part_repairs_and_a_wrong_one_costs():
+    env = make(CIRCUIT, 3)
+    part = env.board.fault[0]
+    other = "RL" if part != "RL" else "R1"
+    env.call("replace_part", {"part": other})
+    env.call("replace_part", {"part": part})
+    env.call("submit", {})
+    s = env.finish()
+    assert s.metrics["fixed"] and not s.passed and s.score == 0.5
+
+
+@needs_spice
+def test_lifted_part_test_shows_the_fault():
+    env = make(CIRCUIT, 0)
+    part, mode = env.board.fault
+    r = env.call("test_part", {"part": part})
+    text = str(r)
+    assert any(w in text for w in ("open", "short", "OL")) or ("ohms" in r and r["ohms"] > 5 * env.board.nominal[part])
